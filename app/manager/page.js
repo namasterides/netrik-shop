@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,7 +12,31 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { LogOut, BarChart3, ClipboardList, UtensilsCrossed, Table2, ChefHat, Plus, Trash2, Pencil, Printer, QrCode, DollarSign, TrendingUp, Download, Clock, CheckCircle2, Mail, MessageCircle, MessageSquare, Upload, Shuffle } from 'lucide-react';
+import {
+  LogOut,
+  BarChart3,
+  ClipboardList,
+  UtensilsCrossed,
+  Table2,
+  ChefHat,
+  Plus,
+  Trash2,
+  Pencil,
+  Printer,
+  DollarSign,
+  TrendingUp,
+  Download,
+  Clock,
+  CheckCircle2,
+  MessageCircle,
+  MessageSquare,
+  Upload,
+  Shuffle,
+  Send,
+  AlertTriangle,
+  Flame,
+  FileText,
+} from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
 
@@ -23,15 +46,15 @@ const MOOD_PRESETS = ['light', 'hearty', 'comfort', 'indulgent', 'energizing', '
 const TASTE_PRESETS = ['tangy', 'sweet', 'savory', 'spicy', 'rich', 'smoky', 'fresh', 'umami', 'sour', 'bitter', 'crispy', 'creamy', 'buttery', 'zesty'];
 const DIETARY_PRESETS = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'nut-free', 'halal', 'kosher', 'keto', 'low-carb', 'high-protein', 'jain'];
 
-function TagPicker({ label, hint, value, onChange, presets, accent = 'amber' }) {
+function TagPicker({ label, hint, value, onChange, presets, accent = 'emerald' }) {
   const tags = Array.isArray(value) ? value : [];
   const [draft, setDraft] = useState('');
   const accentMap = {
-    amber: 'bg-amber-400/20 text-amber-200 border-amber-300/40',
-    rose: 'bg-rose-400/20 text-rose-200 border-rose-300/40',
-    emerald: 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40',
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    rose: 'bg-rose-50 text-rose-800 border-rose-200',
+    neutral: 'bg-neutral-100 text-neutral-700 border-neutral-200',
   };
-  const cls = accentMap[accent] || accentMap.amber;
+  const cls = accentMap[accent] || accentMap.emerald;
   const norm = (s) => String(s || '').trim().toLowerCase().slice(0, 24);
   const add = (raw) => {
     const t = norm(raw);
@@ -50,11 +73,11 @@ function TagPicker({ label, hint, value, onChange, presets, accent = 'amber' }) 
   };
   return (
     <div>
-      <Label>{label}</Label>
-      {hint && <div className="text-[11px] text-white/40 mt-0.5 mb-1">{hint}</div>}
-      <div className="rounded-md border border-white/10 bg-white/5 p-2 min-h-[40px] flex flex-wrap gap-1.5">
+      <Label className="text-xs font-semibold">{label}</Label>
+      {hint && <div className="text-[11px] text-neutral-500 mt-0.5 mb-1.5">{hint}</div>}
+      <div className="rounded-xl border border-neutral-200 bg-white p-2 min-h-[42px] flex flex-wrap gap-1.5">
         {tags.map((t) => (
-          <span key={t} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${cls}`}>
+          <span key={t} className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${cls}`}>
             {t}
             <button type="button" onClick={() => remove(t)} className="opacity-60 hover:opacity-100">×</button>
           </span>
@@ -65,17 +88,17 @@ function TagPicker({ label, hint, value, onChange, presets, accent = 'amber' }) 
           onKeyDown={handleKey}
           onBlur={() => { if (draft.trim()) { add(draft); setDraft(''); } }}
           placeholder={tags.length === 0 ? 'Type & Enter…' : ''}
-          className="flex-1 min-w-[80px] bg-transparent text-sm focus:outline-none placeholder:text-white/30"
+          className="flex-1 min-w-[80px] bg-transparent text-sm focus:outline-none placeholder:text-neutral-400"
         />
       </div>
       {presets && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {presets.filter((p) => !tags.includes(p)).slice(0, 12).map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => add(p)}
-              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/60 hover:bg-white/10 hover:text-white"
+              className="rounded-full border border-neutral-200 bg-white px-2.5 py-0.5 text-[10px] text-neutral-600 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-200 transition"
             >
               + {p}
             </button>
@@ -109,15 +132,13 @@ export default function ManagerDashboard() {
   const [orders, setOrders] = useState([]);
   const [analytics, setAnalytics] = useState({ todayRevenue: 0, todayOrders: 0, avgTicket: 0, topItems: [], byHour: [], last7: [] });
 
-  // dialogs
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [itemForm, setItemForm] = useState({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true });
   const [tableOpen, setTableOpen] = useState(false);
   const [tableForm, setTableForm] = useState({ number: '', seats: 2 });
   const [tableQr, setTableQr] = useState(null);
-  
-  // Support
+
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportMessages, setSupportMessages] = useState([]);
   const [supportText, setSupportText] = useState('');
@@ -139,18 +160,14 @@ export default function ManagerDashboard() {
     reader.readAsDataURL(file);
   };
 
-  const onMenuImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    applyMenuImageFile(file);
-  };
+  const onMenuImageUpload = (e) => applyMenuImageFile(e.target.files?.[0]);
 
   const onMenuImagePaste = async (e) => {
     const items = Array.from(e.clipboardData?.items || []);
     const imageItem = items.find((item) => item.type.startsWith('image/'));
     if (!imageItem) return;
     e.preventDefault();
-    const file = imageItem.getAsFile();
-    applyMenuImageFile(file);
+    applyMenuImageFile(imageItem.getAsFile());
   };
 
   useEffect(() => {
@@ -166,24 +183,14 @@ export default function ManagerDashboard() {
         const sb = getSupabase();
         if (sb) {
           channel = sb.channel('manager-realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `restaurant_id=eq.${u.restaurantId}` }, () => {
-              loadAll(u, true);
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'rest_tables', filter: `restaurant_id=eq.${u.restaurantId}` }, () => {
-              loadAll(u, true);
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `restaurant_id=eq.${u.restaurantId}` }, () => loadAll(u, true))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rest_tables', filter: `restaurant_id=eq.${u.restaurantId}` }, () => loadAll(u, true))
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages', filter: `restaurant_id=eq.${u.restaurantId}` }, (payload) => {
-              setSupportMessages(prev => [...prev, payload.new].sort((a,b) => new Date(a.created_at) - new Date(b.created_at)));
+              setSupportMessages((prev) => [...prev, payload.new].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'support_messages', filter: `restaurant_id=eq.${u.restaurantId}` }, () => {
-              loadAll(u, true); // if message updated/read status changed
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu', filter: `restaurant_id=eq.${u.restaurantId}` }, () => {
-              loadAll(u, true);
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants', filter: `id=eq.${u.restaurantId}` }, () => {
-              loadAll(u, true);
-            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'support_messages', filter: `restaurant_id=eq.${u.restaurantId}` }, () => loadAll(u, true))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu', filter: `restaurant_id=eq.${u.restaurantId}` }, () => loadAll(u, true))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants', filter: `id=eq.${u.restaurantId}` }, () => loadAll(u, true))
             .subscribe();
         }
       });
@@ -199,14 +206,18 @@ export default function ManagerDashboard() {
   const loadAll = async (u, silent = false) => {
     if (!u) return;
     const [r, m, t, o, a, sm] = await Promise.all([
-      fetch(`/api/restaurants/${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
-      fetch(`/api/menu?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
-      fetch(`/api/tables?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
-      fetch(`/api/orders?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
-      fetch(`/api/analytics?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
-      fetch(`/api/support?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then(r => r.json()),
+      fetch(`/api/restaurants/${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/menu?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/tables?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/orders?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/analytics?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/support?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
     ]);
-    setRestaurant(r.restaurant); setMenu(m.menu || []); setTables(t.tables || []); setOrders(o.orders || []); setAnalytics(a || {});
+    setRestaurant(r.restaurant);
+    setMenu(m.menu || []);
+    setTables(t.tables || []);
+    setOrders(o.orders || []);
+    setAnalytics(a || {});
     setSupportMessages(sm.messages || []);
   };
 
@@ -218,7 +229,9 @@ export default function ManagerDashboard() {
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) return toast.error('Failed');
     toast.success(editingItem ? 'Item updated' : 'Item added');
-    setMenuOpen(false); setEditingItem(null); setItemForm({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true, moodTags: [], tasteTags: [], dietaryTags: [] });
+    setMenuOpen(false);
+    setEditingItem(null);
+    setItemForm({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true, moodTags: [], tasteTags: [], dietaryTags: [] });
     loadAll(me);
   };
 
@@ -239,7 +252,8 @@ export default function ManagerDashboard() {
     const data = await res.json();
     if (!res.ok) return toast.error(data.error || 'Failed');
     toast.success('Table added');
-    setTableOpen(false); setTableForm({ number: '', seats: 2 });
+    setTableOpen(false);
+    setTableForm({ number: '', seats: 2 });
     loadAll(me);
   };
 
@@ -263,7 +277,7 @@ export default function ManagerDashboard() {
     if (!supportText) return;
     const res = await fetch('/api/support', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId: me.restaurantId, sender: 'restaurant', message: supportText })
+      body: JSON.stringify({ restaurantId: me.restaurantId, sender: 'restaurant', message: supportText }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(data.error || 'Failed to send');
@@ -291,11 +305,11 @@ export default function ManagerDashboard() {
   const filteredOrders = useMemo(() => orders.filter((o) => orderInRange(o, startDate, endDate)), [orders, startDate, endDate]);
 
   const downloadCSV = (dataRows = orders, filenamePrefix = 'orders') => {
-    const csvRows = [['Date','Order #','Table','Items','Total','Status']];
-    dataRows.forEach(o => {
-      csvRows.push([new Date(o.createdAt).toLocaleString(), o.id.slice(0,8), o.tableNumber, o.items.map(i=>`${i.qty}x ${i.name}`).join('; '), o.total.toFixed(2), o.status]);
+    const csvRows = [['Date', 'Order #', 'Table', 'Items', 'Total', 'Status']];
+    dataRows.forEach((o) => {
+      csvRows.push([new Date(o.createdAt).toLocaleString(), o.id.slice(0, 8), o.tableNumber, o.items.map((i) => `${i.qty}x ${i.name}`).join('; '), o.total.toFixed(2), o.status]);
     });
-    const csv = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const csv = csvRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -317,20 +331,19 @@ export default function ManagerDashboard() {
         <td>${itemsToText(o.items)}</td>
         <td>$${o.total.toFixed(2)}</td>
         <td>${o.status}</td>
-      </tr>
-    `).join('');
+      </tr>`).join('');
 
     w.document.write(`<html><head><title>${title}</title><style>
       @page{size:A4;margin:14mm}
-      body{font-family:Segoe UI,Arial,sans-serif;color:#111}
-      h1{font-size:18px;margin:0}
-      p{color:#444;font-size:12px;margin:6px 0 14px}
+      body{font-family:Inter,Segoe UI,Arial,sans-serif;color:#0a0a0a}
+      h1{font-size:18px;margin:0;font-weight:700}
+      p{color:#525252;font-size:12px;margin:6px 0 14px}
       table{width:100%;border-collapse:collapse;font-size:11px}
-      th,td{border:1px solid #ddd;padding:6px;vertical-align:top;text-align:left}
-      th{background:#f6f6f6;text-transform:uppercase;font-size:10px;letter-spacing:.04em}
+      th,td{border-bottom:1px solid #e5e7eb;padding:8px;vertical-align:top;text-align:left}
+      th{background:#fafafa;text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#525252}
     </style></head><body>
-      <h1>${restaurant?.name || 'Restaurant'} - ${title}</h1>
-      <p>Printed: ${new Date().toLocaleString()} | Rows: ${rows.length}</p>
+      <h1>${restaurant?.name || 'Restaurant'} · ${title}</h1>
+      <p>Printed: ${new Date().toLocaleString()} · Rows: ${rows.length}</p>
       <table>
         <thead><tr><th>Date</th><th>Order</th><th>Table</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
         <tbody>${bodyRows || '<tr><td colspan="6">No rows found</td></tr>'}</tbody>
@@ -376,210 +389,325 @@ export default function ManagerDashboard() {
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const tableUrl = (t) => `${baseUrl}/order/${t.id}`;
 
-  const tampaDateTime = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    dateStyle: 'full',
-    timeStyle: 'medium',
-  }).format(clock);
-
   const printQR = (t) => {
     const w = window.open('', '_blank');
     if (!w) return;
-    w.document.write(`<html><head><title>Table ${t.number} QR</title><style>body{font-family:system-ui;text-align:center;padding:40px;}h1{font-size:32px;margin:0}</style></head><body>
+    w.document.write(`<html><head><title>Table ${t.number} QR</title><style>body{font-family:Inter,system-ui;text-align:center;padding:48px;color:#0a0a0a}h1{font-size:30px;margin:0;font-weight:700;letter-spacing:-.02em}</style></head><body>
       <h1>${restaurant?.name || ''}</h1>
-      <p style="color:#888">by Netrik Shop</p>
-      <h2 style="margin:24px 0 6px">Table ${t.number}</h2>
-      <p style="color:#444">Scan to order</p>
+      <p style="color:#525252">by Netrik Shop</p>
+      <h2 style="margin:24px 0 6px;font-weight:600">Table ${t.number}</h2>
+      <p style="color:#666">Scan to order</p>
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tableUrl(t))}" style="margin:16px auto"/>
-      <p style="color:#888;font-size:12px;">${tableUrl(t)}</p>
+      <p style="color:#777;font-size:12px;">${tableUrl(t)}</p>
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
   };
 
-  if (!me || !restaurant) return <div className="min-h-screen grid place-items-center bg-[#0b0b0d] text-white">Loading…</div>;
+  if (!me || !restaurant) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-white text-neutral-500 text-sm">
+        Loading dashboard…
+      </div>
+    );
+  }
 
-  const pendingOrders = orders.filter(o => ['pending','preparing'].includes(o.status));
-  const liveOrders = orders.filter(o => o.status !== 'paid' && o.status !== 'cancelled');
+  const pendingOrders = orders.filter((o) => ['pending', 'preparing'].includes(o.status));
+  const liveOrders = orders.filter((o) => o.status !== 'paid' && o.status !== 'cancelled');
+  const unreadSupport = supportMessages.filter((m) => m.sender === 'central' && !m.read).length;
+
+  const TABS = [
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'orders', label: 'Orders', icon: ClipboardList },
+    { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
+    { id: 'tables', label: 'Tables', icon: Table2 },
+    { id: 'kitchen', label: 'Kitchen', icon: ChefHat },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#0b0b0d] text-white">
-      <header className="border-b border-white/10 sticky top-0 bg-black/60 backdrop-blur z-30">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
+      <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             {restaurant.logoUrl ? (
-              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-10 w-10 rounded-lg border border-white/10 object-cover"/>
+              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-9 w-9 rounded-xl border border-neutral-200 object-cover" />
             ) : (
-              <NetrikLogo className="h-10 w-10"/>
+              <NetrikLogo className="h-9 w-9" />
             )}
-            <div>
-              <div className="font-bold">{restaurant.name}</div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">by Netrik Shop · Manager</div>
+            <div className="min-w-0">
+              <div className="font-bold tracking-tight truncate">{restaurant.name}</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-700/80 font-semibold">
+                Manager · {me.userId}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 items-center rounded-md border border-white/20 bg-white/5 px-3 text-sm text-white/80 font-medium whitespace-nowrap"><Clock className="h-4 w-4 mr-2"/>{clock.toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' })}</div>
-            <Button size="sm" variant="outline" className="h-9 border-white/20 bg-white/5 hover:bg-white/10 hover:text-white text-white/80 relative" onClick={() => setSupportOpen(true)}>
-              <MessageSquare className="h-4 w-4 mr-2"/>Contact support
-              {supportMessages.filter(m => m.sender === 'central' && !m.read).length > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold"></span>
+
+          <div className="flex items-center gap-2">
+            <div className="hidden lg:flex h-9 items-center rounded-full border border-neutral-200 bg-white px-3 text-xs text-neutral-700 font-medium">
+              <Clock className="h-3.5 w-3.5 mr-1.5 text-neutral-400" />
+              {clock.toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50 relative hidden md:inline-flex"
+              onClick={() => setSupportOpen(true)}
+            >
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Support
+              {unreadSupport > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white border-2 border-white">
+                  {unreadSupport}
+                </span>
               )}
             </Button>
-            <Button asChild size="sm" variant="outline" className="h-9 border-white/20 bg-white/5 hover:bg-white/10 hover:text-white text-white/80">
-              <a href="https://wa.me/16562145190?text=Hi%20Netrik%20Support%2C%20I%20need%20help%20with%20my%20restaurant%20dashboard" target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4 mr-2"/>WhatsApp</a>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="md:hidden rounded-full h-9 w-9 p-0 border-neutral-200 hover:bg-neutral-50 relative"
+              onClick={() => setSupportOpen(true)}
+            >
+              <MessageSquare className="h-4 w-4" />
+              {unreadSupport > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white border-2 border-white">
+                  {unreadSupport}
+                </span>
+              )}
             </Button>
-            <div className="flex h-9 items-center rounded-md border border-green-400/30 bg-green-400/10 px-3 text-sm text-green-300 font-medium whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full bg-green-400 mr-2 animate-pulse"/> Live</div>
-            <Button size="sm" variant="ghost" className="h-9 hover:bg-white/10 hover:text-white text-white/70" onClick={() => { localStorage.removeItem('netrik_user'); router.push('/login'); }}><LogOut className="h-4 w-4 mr-2"/>Logout</Button>
+
+            <Button asChild size="sm" variant="outline" className="hidden xl:inline-flex rounded-full h-9 border-neutral-200 hover:bg-neutral-50">
+              <a href="https://wa.me/16562145190?text=Hi%20Netrik%20Support%2C%20I%20need%20help%20with%20my%20restaurant%20dashboard" target="_blank" rel="noreferrer">
+                <MessageCircle className="h-4 w-4 mr-2" />WhatsApp
+              </a>
+            </Button>
+
+            <div className="hidden sm:flex h-9 items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs text-emerald-800 font-semibold">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 mr-2 netrik-pulse" /> Live
+            </div>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              className="rounded-full text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
+              onClick={() => { localStorage.removeItem('netrik_user'); router.push('/login'); }}
+            >
+              <LogOut className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Logout</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-5 md:px-8 py-6 md:py-8">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className="bg-white/5 border border-white/10 grid grid-cols-5 max-w-3xl mx-auto">
-            <TabsTrigger value="analytics" className="data-[state=active]:bg-amber-400 data-[state=active]:text-black"><BarChart3 className="h-4 w-4 mr-1.5"/>Analytics</TabsTrigger>
-            <TabsTrigger value="orders" className="data-[state=active]:bg-amber-400 data-[state=active]:text-black"><ClipboardList className="h-4 w-4 mr-1.5"/>Orders</TabsTrigger>
-            <TabsTrigger value="menu" className="data-[state=active]:bg-amber-400 data-[state=active]:text-black"><UtensilsCrossed className="h-4 w-4 mr-1.5"/>Menu</TabsTrigger>
-            <TabsTrigger value="tables" className="data-[state=active]:bg-amber-400 data-[state=active]:text-black"><Table2 className="h-4 w-4 mr-1.5"/>Tables</TabsTrigger>
-            <TabsTrigger value="kitchen" className="data-[state=active]:bg-amber-400 data-[state=active]:text-black"><ChefHat className="h-4 w-4 mr-1.5"/>Kitchen</TabsTrigger>
-          </TabsList>
+          {/* Custom mobile-friendly tab bar */}
+          <div className="overflow-x-auto -mx-5 md:-mx-0 px-5 md:px-0 hide-scrollbar">
+            <TabsList className="bg-neutral-100/80 border border-neutral-200/80 rounded-full inline-flex h-11 p-1 w-auto md:w-full md:max-w-2xl md:mx-auto md:grid md:grid-cols-5">
+              {TABS.map((t) => (
+                <TabsTrigger
+                  key={t.id}
+                  value={t.id}
+                  className="h-9 rounded-full px-4 text-sm font-semibold text-neutral-600 data-[state=active]:bg-emerald-700 data-[state=active]:text-white data-[state=active]:shadow whitespace-nowrap"
+                >
+                  <t.icon className="h-4 w-4 mr-1.5" />
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
           {/* Analytics */}
           <TabsContent value="analytics" className="space-y-6">
-            <Card className="bg-white/5 border-white/10">
-              <CardContent className="p-4 md:p-5">
-                <div className="flex flex-wrap items-end gap-3">
-                  <div>
-                    <Label className="text-xs text-white/60">Start date</Label>
-                    <Input type="date" value={startDate} onChange={(e)=>setStartDate(e.target.value)} className="mt-1 w-[170px] bg-white/5 border-white/10"/>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-white/60">End date</Label>
-                    <Input type="date" value={endDate} onChange={(e)=>setEndDate(e.target.value)} className="mt-1 w-[170px] bg-white/5 border-white/10"/>
-                  </div>
-                  <Button size="sm" variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={setTodayRange}>Today</Button>
-                  <Button size="sm" variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={()=>{setStartDate(''); setEndDate('');}}>Clear</Button>
-                  <Button size="sm" variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={()=>downloadCSV(filteredOrders, 'orders-range')}><Download className="h-4 w-4 mr-2"/>CSV</Button>
-                  <Button size="sm" variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={()=>printOrdersA4(filteredOrders, 'Orders Report (A4)')}><Printer className="h-4 w-4 mr-2"/>Print A4</Button>
-                  <div className="text-xs text-white/50 ml-auto">Rows in range: {filteredOrders.length}</div>
+            <div className="rounded-2xl bg-white border border-neutral-200/80 p-4 md:p-5">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-neutral-700">Start date</Label>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1.5 w-[170px] bg-white border-neutral-200" />
                 </div>
-              </CardContent>
-            </Card>
-            <div className="grid md:grid-cols-4 gap-5">
+                <div>
+                  <Label className="text-xs font-semibold text-neutral-700">End date</Label>
+                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1.5 w-[170px] bg-white border-neutral-200" />
+                </div>
+                <Button size="sm" variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={setTodayRange}>Today</Button>
+                <Button size="sm" variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => { setStartDate(''); setEndDate(''); }}>Clear</Button>
+                <Button size="sm" variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadCSV(filteredOrders, 'orders-range')}><Download className="h-4 w-4 mr-1.5" />CSV</Button>
+                <Button size="sm" variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => printOrdersA4(filteredOrders, 'Orders Report (A4)')}><Printer className="h-4 w-4 mr-1.5" />Print A4</Button>
+                <div className="text-xs text-neutral-500 ml-auto">Rows in range: <span className="font-semibold text-neutral-800">{filteredOrders.length}</span></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { i: <DollarSign/>, t: "Today's revenue", v: `$${analytics.todayRevenue?.toFixed(2) || '0.00'}` },
-                { i: <ClipboardList/>, t: "Today's orders", v: analytics.todayOrders || 0 },
-                { i: <TrendingUp/>, t: 'Avg ticket', v: `$${analytics.avgTicket?.toFixed(2) || '0.00'}` },
-                { i: <Table2/>, t: 'Active tables', v: tables.filter(t => t.status === 'occupied').length + '/' + tables.length },
+                { i: DollarSign, t: "Today's revenue", v: `$${analytics.todayRevenue?.toFixed(2) || '0.00'}` },
+                { i: ClipboardList, t: "Today's orders", v: analytics.todayOrders || 0 },
+                { i: TrendingUp, t: 'Avg ticket', v: `$${analytics.avgTicket?.toFixed(2) || '0.00'}` },
+                { i: Table2, t: 'Active tables', v: tables.filter((t) => t.status === 'occupied').length + '/' + tables.length },
               ].map((c) => (
-                <Card key={c.t} className="bg-white/5 border-white/10">
-                  <CardContent className="p-6">
-                    <div className="h-10 w-10 rounded-xl bg-amber-400/20 text-amber-300 grid place-items-center mb-3">{c.i}</div>
-                    <div className="text-3xl font-black">{c.v}</div>
-                    <div className="text-xs uppercase tracking-wider text-white/50 mt-1">{c.t}</div>
-                  </CardContent>
-                </Card>
+                <div key={c.t} className="rounded-2xl bg-white border border-neutral-200/80 p-5">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center mb-3">
+                    <c.i className="h-4.5 w-4.5" />
+                  </div>
+                  <div className="text-2xl md:text-3xl font-extrabold tabular-nums tracking-tight">{c.v}</div>
+                  <div className="text-[11px] uppercase tracking-widest text-neutral-500 font-medium mt-1">{c.t}</div>
+                </div>
               ))}
             </div>
-            <div className="grid lg:grid-cols-3 gap-5">
-              <Card className="bg-white/5 border-white/10 lg:col-span-2">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="font-semibold">Revenue · last 7 days</div>
-                    <Button variant="outline" className="h-9 border-white/20 bg-white/5 hover:bg-white/10 hover:text-white text-white/80" size="sm" onClick={() => downloadCSV(filteredOrders, 'orders-range')}><Download className="h-4 w-4 mr-2"/>CSV</Button>
+
+            <div className="grid lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 rounded-2xl bg-white border border-neutral-200/80 p-5 md:p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <div className="font-display font-bold text-lg tracking-tight">Revenue · last 7 days</div>
+                    <div className="text-xs text-neutral-500 mt-0.5">Daily totals across all orders</div>
                   </div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <LineChart data={analytics.last7 || []}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.06)"/>
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11}/>
-                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11}/>
-                      <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} itemStyle={{ color: '#fff' }} labelStyle={{ color: '#fff' }}/>
-                      <Line type="monotone" dataKey="revenue" stroke="#fbbf24" strokeWidth={2} dot={false}/>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-              <Card className="bg-white/5 border-white/10">
-                <CardContent className="p-6">
-                  <div className="font-semibold mb-4">Top items</div>
-                  <div className="space-y-3">
-                    {(analytics.topItems || []).slice(0,5).map((i,idx) => (
-                      <div key={i.name} className="flex items-center gap-3">
-                        <div className="text-xs font-mono text-amber-300 w-5">#{idx+1}</div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">{i.name}</div>
-                          <div className="text-xs text-white/40">{i.count} orders</div>
-                        </div>
-                        <div className="text-sm font-semibold text-amber-300">${i.revenue.toFixed(2)}</div>
-                      </div>
-                    ))}
-                    {(!analytics.topItems || analytics.topItems.length === 0) && <div className="text-sm text-white/40">No data yet</div>}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            <Card className="bg-white/5 border-white/10">
-              <CardContent className="p-6">
-                <div className="font-semibold mb-4">Orders by hour (today)</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={analytics.byHour || []}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)"/>
-                    <XAxis dataKey="hour" stroke="rgba(255,255,255,0.4)" fontSize={11}/>
-                    <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11}/>
-                    <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}/>
-                    <Bar dataKey="orders" fill="#fb7185" radius={[4,4,0,0]}/>
-                  </BarChart>
+                  <Button variant="outline" className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50" size="sm" onClick={() => downloadCSV(filteredOrders, 'orders-range')}>
+                    <Download className="h-4 w-4 mr-1.5" />CSV
+                  </Button>
+                </div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={analytics.last7 || []}>
+                    <CartesianGrid stroke="#f0f0f0" vertical={false} />
+                    <XAxis dataKey="date" stroke="#a3a3a3" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#a3a3a3" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+                      itemStyle={{ color: '#0a0a0a', fontSize: 12 }}
+                      labelStyle={{ color: '#525252', fontSize: 11 }}
+                    />
+                    <Line type="monotone" dataKey="revenue" stroke="#047857" strokeWidth={2.5} dot={false} />
+                  </LineChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="rounded-2xl bg-white border border-neutral-200/80 p-5 md:p-6">
+                <div className="font-display font-bold text-lg tracking-tight mb-1">Top items</div>
+                <div className="text-xs text-neutral-500 mb-4">Best sellers by revenue</div>
+                <div className="space-y-3">
+                  {(analytics.topItems || []).slice(0, 5).map((i, idx) => (
+                    <div key={i.name} className="flex items-center gap-3">
+                      <div className="h-7 w-7 rounded-full bg-emerald-50 text-emerald-700 grid place-items-center text-xs font-bold tabular-nums">
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate">{i.name}</div>
+                        <div className="text-xs text-neutral-500">{i.count} orders</div>
+                      </div>
+                      <div className="text-sm font-bold text-emerald-800 tabular-nums">${i.revenue.toFixed(2)}</div>
+                    </div>
+                  ))}
+                  {(!analytics.topItems || analytics.topItems.length === 0) && (
+                    <div className="text-sm text-neutral-400 text-center py-4">No data yet</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-neutral-200/80 p-5 md:p-6">
+              <div className="font-display font-bold text-lg tracking-tight mb-1">Orders by hour</div>
+              <div className="text-xs text-neutral-500 mb-4">Today's distribution</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={analytics.byHour || []}>
+                  <CartesianGrid stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="hour" stroke="#a3a3a3" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#a3a3a3" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12 }} />
+                  <Bar dataKey="orders" fill="#10b981" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </TabsContent>
 
           {/* Orders */}
           <TabsContent value="orders" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-white/60">{liveOrders.length} live orders</div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-neutral-600">
+                <span className="font-semibold text-neutral-900">{liveOrders.length}</span> live orders
+              </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" size="sm" onClick={() => downloadCSV(filteredOrders, 'orders-range')}><Download className="h-4 w-4 mr-2"/>Download CSV</Button>
-                <Button variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" size="sm" onClick={() => printOrdersA4(filteredOrders, 'Orders Report (A4)')}><Printer className="h-4 w-4 mr-2"/>Print A4</Button>
+                <Button variant="outline" size="sm" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadCSV(filteredOrders, 'orders-range')}>
+                  <Download className="h-4 w-4 mr-1.5" />CSV
+                </Button>
+                <Button variant="outline" size="sm" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => printOrdersA4(filteredOrders, 'Orders Report (A4)')}>
+                  <Printer className="h-4 w-4 mr-1.5" />Print A4
+                </Button>
               </div>
             </div>
             <div className="grid lg:grid-cols-2 gap-4">
-              {orders.length === 0 && (<Card className="bg-white/5 border-white/10"><CardContent className="p-10 text-center text-white/40">No orders yet — customers will scan a table QR to place orders.</CardContent></Card>)}
+              {orders.length === 0 && (
+                <div className="lg:col-span-2 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  No orders yet — customers will scan a table QR to place orders.
+                </div>
+              )}
               {orders.map((o) => (
-                <Card key={o.id} className="bg-white/5 border-white/10">
-                  <CardContent className="p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm text-white/50">Order <span className="font-mono">#{o.id.slice(0,8)}</span></div>
-                        <div className="font-semibold text-lg">Table {o.tableNumber}</div>
+                <div key={o.id} className="rounded-2xl bg-white border border-neutral-200/80 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-neutral-400">
+                        Order #{o.id.slice(0, 8)}
                       </div>
-                      <Badge className={`${o.status === 'paid' ? 'bg-green-400/20 text-green-300 border-green-400/30' : o.status === 'ready' ? 'bg-blue-400/20 text-blue-300 border-blue-400/30' : 'bg-amber-400/20 text-amber-300 border-amber-400/30'}`}>{o.status}</Badge>
+                      <div className="font-display text-xl font-bold tracking-tight mt-0.5">Table {o.tableNumber}</div>
                     </div>
-                    <div className="mt-3 space-y-1 text-sm">
-                      {o.items.map((i,idx) => (
-                        <div key={idx} className="flex justify-between"><span>{i.qty}× {i.name}{i.notes ? ` (${i.notes})` : ''}</span><span className="text-white/60">${(i.price*i.qty).toFixed(2)}</span></div>
-                      ))}
-                    </div>
-                    {(o.allergy || o.spicyLevel) && (
-                      <div className="mt-2 text-xs text-amber-300/80">{o.allergy ? `Allergy: ${o.allergy}` : ''} {o.spicyLevel ? ` · Spice: ${o.spicyLevel}` : ''}</div>
-                    )}
-                    <div className="mt-2 text-xs text-white/60">
-                      Payment: <span className={`${o.paymentStatus === 'paid' ? 'text-green-300' : o.paymentStatus === 'failed' ? 'text-rose-300' : 'text-amber-300'}`}>{o.paymentStatus || 'unpaid'}</span>
-                      {o.paymentReference ? ` · Ref ${o.paymentReference}` : ''}
-                    </div>
-                    <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-                      <div className="font-bold text-lg text-amber-300">${o.total.toFixed(2)}</div>
-                      <div className="flex gap-1">
-                        {o.status === 'pending' && <Button size="sm" onClick={() => setOrderStatus(o, 'preparing')} className="bg-amber-400 text-black hover:bg-amber-300">Accept</Button>}
-                        {o.status === 'preparing' && <Button size="sm" onClick={() => setOrderStatus(o, 'ready')} className="bg-blue-500 hover:bg-blue-400">Ready</Button>}
-                        {o.status === 'ready' && <Button size="sm" onClick={() => setOrderStatus(o, 'served')} className="bg-green-500 hover:bg-green-400">Served</Button>}
+                    <OrderStatusBadge status={o.status} />
+                  </div>
+                  <div className="mt-3 space-y-1 text-sm">
+                    {o.items.map((i, idx) => (
+                      <div key={idx} className="flex justify-between gap-3">
+                        <span className="truncate">
+                          <span className="font-semibold tabular-nums">{i.qty}×</span> {i.name}
+                          {i.notes ? <span className="text-neutral-500"> ({i.notes})</span> : ''}
+                        </span>
+                        <span className="text-neutral-600 tabular-nums shrink-0">${(i.price * i.qty).toFixed(2)}</span>
                       </div>
+                    ))}
+                  </div>
+                  {(o.allergy || o.spicyLevel) && (
+                    <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+                      {o.allergy && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 px-2 py-0.5">
+                          <AlertTriangle className="h-3 w-3" />Allergy: {o.allergy}
+                        </span>
+                      )}
+                      {o.spicyLevel && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5">
+                          <Flame className="h-3 w-3" />Spice: {o.spicyLevel}
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-xs text-white/40">
-                      <span>{new Date(o.createdAt).toLocaleTimeString()}</span>
-                      <button onClick={() => downloadReceipt(o)} className="text-amber-300 hover:text-amber-200">Download bill</button>
+                  )}
+                  <div className="mt-2 text-xs text-neutral-500">
+                    Payment:{' '}
+                    <span className={o.paymentStatus === 'paid' ? 'text-emerald-700 font-semibold' : o.paymentStatus === 'failed' ? 'text-rose-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                      {o.paymentStatus || 'unpaid'}
+                    </span>
+                    {o.paymentReference ? <span className="text-neutral-400"> · Ref {o.paymentReference}</span> : ''}
+                  </div>
+                  <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-4">
+                    <div className="font-bold text-lg text-emerald-800 tabular-nums">${o.total.toFixed(2)}</div>
+                    <div className="flex gap-2">
+                      {o.status === 'pending' && (
+                        <Button size="sm" onClick={() => setOrderStatus(o, 'preparing')} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white">
+                          Accept
+                        </Button>
+                      )}
+                      {o.status === 'preparing' && (
+                        <Button size="sm" onClick={() => setOrderStatus(o, 'ready')} className="rounded-full bg-neutral-900 hover:bg-neutral-800 text-white">
+                          Ready
+                        </Button>
+                      )}
+                      {o.status === 'ready' && (
+                        <Button size="sm" onClick={() => setOrderStatus(o, 'served')} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white">
+                          Served
+                        </Button>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-neutral-400">
+                    <span>{new Date(o.createdAt).toLocaleTimeString()}</span>
+                    <button onClick={() => downloadReceipt(o)} className="text-emerald-700 hover:text-emerald-800 font-semibold">
+                      Download bill
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </TabsContent>
@@ -587,112 +715,166 @@ export default function ManagerDashboard() {
           {/* Menu */}
           <TabsContent value="menu" className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-white/60">{menu.length} items · {menu.filter(m=>m.available).length} available</div>
+              <div className="text-sm text-neutral-600">
+                <span className="font-semibold text-neutral-900">{menu.length}</span> items ·{' '}
+                <span className="font-semibold text-emerald-700">{menu.filter((m) => m.available).length}</span> available
+              </div>
               <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-                <DialogTrigger asChild><Button onClick={()=>{setEditingItem(null); setItemForm({ name:'', description:'', price:'', category:'Mains', image:FOOD_IMG, videoUrl:'', available:true })}} className="bg-amber-400 text-black hover:bg-amber-300"><Plus className="h-4 w-4 mr-1"/>Add item</Button></DialogTrigger>
-                <DialogContent className="bg-[#111] border-white/10 text-white max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">
-                  <DialogHeader className="px-6 pt-6 pb-2 shrink-0"><DialogTitle>{editingItem ? 'Edit item' : 'New menu item'}</DialogTitle></DialogHeader>
+                <DialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingItem(null);
+                      setItemForm({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true });
+                    }}
+                    className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-1.5" />Add item
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">
+                  <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+                    <DialogTitle className="font-display tracking-tight">
+                      {editingItem ? 'Edit item' : 'New menu item'}
+                    </DialogTitle>
+                  </DialogHeader>
                   <div className="space-y-3 px-6 py-2 overflow-y-auto flex-1 min-h-0">
-                    <div><Label>Name *</Label><Input value={itemForm.name} onChange={e=>setItemForm({...itemForm,name:e.target.value})} className="bg-white/5 border-white/10"/></div>
-                    <div><Label>Description</Label><Textarea value={itemForm.description} onChange={e=>setItemForm({...itemForm,description:e.target.value})} className="bg-white/5 border-white/10"/></div>
+                    <div>
+                      <Label className="text-xs font-semibold">Name *</Label>
+                      <Input value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} className="mt-1.5 bg-white border-neutral-200" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold">Description</Label>
+                      <Textarea value={itemForm.description} onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })} className="mt-1.5 bg-white border-neutral-200" />
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div><Label>Price ($) *</Label><Input type="number" step="0.01" value={itemForm.price} onChange={e=>setItemForm({...itemForm,price:e.target.value})} className="bg-white/5 border-white/10"/></div>
-                      <div><Label>Category</Label>
-                        <Select value={itemForm.category} onValueChange={v=>setItemForm({...itemForm,category:v})}>
-                          <SelectTrigger className="bg-white/5 border-white/10"><SelectValue/></SelectTrigger>
-                          <SelectContent className="bg-[#111] text-white border-white/10">{CATEGORIES.map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                      <div>
+                        <Label className="text-xs font-semibold">Price ($) *</Label>
+                        <Input type="number" step="0.01" value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })} className="mt-1.5 bg-white border-neutral-200" />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold">Category</Label>
+                        <Select value={itemForm.category} onValueChange={(v) => setItemForm({ ...itemForm, category: v })}>
+                          <SelectTrigger className="mt-1.5 bg-white border-neutral-200"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-white">{CATEGORIES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
                         </Select>
                       </div>
                     </div>
                     <div>
-                      <Label>Image URL</Label>
+                      <Label className="text-xs font-semibold">Image URL</Label>
                       <Input
                         value={itemForm.image}
-                        onChange={e=>setItemForm({...itemForm,image:e.target.value})}
+                        onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })}
                         onPaste={onMenuImagePaste}
                         placeholder="Paste URL or press Ctrl+V after copying image"
-                        className="bg-white/5 border-white/10"
+                        className="mt-1.5 bg-white border-neutral-200"
                       />
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-white/20 bg-white/5 px-3 text-xs text-white/80 hover:bg-white/10">
-                          <Upload className="h-3.5 w-3.5 mr-1.5"/>Upload from PC
-                          <input type="file" accept="image/*" className="hidden" onChange={onMenuImageUpload}/>
+                        <label className="inline-flex h-9 cursor-pointer items-center rounded-full border border-neutral-200 bg-white px-3.5 text-xs text-neutral-700 hover:bg-neutral-50 font-semibold">
+                          <Upload className="h-3.5 w-3.5 mr-1.5" />Upload from PC
+                          <input type="file" accept="image/*" className="hidden" onChange={onMenuImageUpload} />
                         </label>
-                        <Button type="button" size="sm" variant="outline" className="h-9 border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={() => setItemForm((prev) => ({ ...prev, image: getRandomImage() }))}><Shuffle className="h-3.5 w-3.5 mr-1.5"/>Random photo</Button>
+                        <Button type="button" size="sm" variant="outline" className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50" onClick={() => setItemForm((prev) => ({ ...prev, image: getRandomImage() }))}>
+                          <Shuffle className="h-3.5 w-3.5 mr-1.5" />Random
+                        </Button>
                       </div>
                     </div>
                     {itemForm.image && (
-                      <div className="rounded-md border border-white/10 p-2 bg-black/30">
-                        <img src={itemForm.image} alt="Preview" className="h-28 w-full rounded-md object-cover"/>
+                      <div className="rounded-xl border border-neutral-200 p-2 bg-neutral-50/40">
+                        <img src={itemForm.image} alt="Preview" className="h-32 w-full rounded-lg object-cover" />
                       </div>
                     )}
                     <div>
-                      <Label>Video URL (optional)</Label>
-                      <Input value={itemForm.videoUrl} onChange={e=>setItemForm({...itemForm,videoUrl:e.target.value})} placeholder="https://...mp4" className="bg-white/5 border-white/10"/>
+                      <Label className="text-xs font-semibold">Video URL (optional)</Label>
+                      <Input value={itemForm.videoUrl} onChange={(e) => setItemForm({ ...itemForm, videoUrl: e.target.value })} placeholder="https://...mp4" className="mt-1.5 bg-white border-neutral-200" />
                     </div>
                     {itemForm.videoUrl && (
-                      <div className="rounded-md border border-white/10 p-2 bg-black/30">
-                        <video src={itemForm.videoUrl} controls muted className="h-32 w-full rounded-md object-cover"/>
+                      <div className="rounded-xl border border-neutral-200 p-2 bg-neutral-50/40">
+                        <video src={itemForm.videoUrl} controls muted className="h-32 w-full rounded-lg object-cover" />
                       </div>
                     )}
-                    <div className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 space-y-3">
-                      <div className="text-[11px] uppercase tracking-widest text-amber-300/80 font-semibold">AI Waiter tags</div>
-                      <div className="text-[11px] text-white/50 -mt-2">These help the AI suggest this dish when guests describe their craving.</div>
-                      <TagPicker
-                        label="Mood"
-                        hint="When would a guest want this? e.g. light, comfort, celebratory"
-                        value={itemForm.moodTags || []}
-                        onChange={(v) => setItemForm({ ...itemForm, moodTags: v })}
-                        presets={MOOD_PRESETS}
-                        accent="amber"
-                      />
-                      <TagPicker
-                        label="Taste"
-                        hint="What does it taste like? e.g. tangy, smoky, creamy"
-                        value={itemForm.tasteTags || []}
-                        onChange={(v) => setItemForm({ ...itemForm, tasteTags: v })}
-                        presets={TASTE_PRESETS}
-                        accent="rose"
-                      />
-                      <TagPicker
-                        label="Dietary"
-                        hint="Any dietary fits? e.g. vegan, gluten-free"
-                        value={itemForm.dietaryTags || []}
-                        onChange={(v) => setItemForm({ ...itemForm, dietaryTags: v })}
-                        presets={DIETARY_PRESETS}
-                        accent="emerald"
-                      />
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-4">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold">AI Waiter tags</div>
+                        <div className="text-[11px] text-neutral-500 mt-0.5">Help the AI suggest this dish when guests describe their craving.</div>
+                      </div>
+                      <TagPicker label="Mood" hint="When would a guest want this? e.g. light, comfort, celebratory" value={itemForm.moodTags || []} onChange={(v) => setItemForm({ ...itemForm, moodTags: v })} presets={MOOD_PRESETS} accent="emerald" />
+                      <TagPicker label="Taste" hint="What does it taste like? e.g. tangy, smoky, creamy" value={itemForm.tasteTags || []} onChange={(v) => setItemForm({ ...itemForm, tasteTags: v })} presets={TASTE_PRESETS} accent="rose" />
+                      <TagPicker label="Dietary" hint="Any dietary fits? e.g. vegan, gluten-free" value={itemForm.dietaryTags || []} onChange={(v) => setItemForm({ ...itemForm, dietaryTags: v })} presets={DIETARY_PRESETS} accent="neutral" />
                     </div>
-                    <div className="flex items-center justify-between rounded-lg border border-white/10 p-3"><div><div className="text-sm font-medium">Available</div><div className="text-xs text-white/50">Show on customer menu</div></div><Switch checked={itemForm.available} onCheckedChange={v=>setItemForm({...itemForm,available:v})}/></div>
+                    <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4">
+                      <div>
+                        <div className="text-sm font-semibold">Available</div>
+                        <div className="text-xs text-neutral-500">Show on customer menu</div>
+                      </div>
+                      <Switch checked={itemForm.available} onCheckedChange={(v) => setItemForm({ ...itemForm, available: v })} />
+                    </div>
                   </div>
-                  <DialogFooter className="px-6 py-4 border-t border-white/10 shrink-0 bg-[#111]"><Button onClick={saveItem} className="bg-amber-400 text-black hover:bg-amber-300">{editingItem ? 'Save' : 'Add'}</Button></DialogFooter>
+                  <DialogFooter className="px-6 py-4 border-t border-neutral-200 shrink-0 bg-white">
+                    <Button onClick={saveItem} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5">
+                      {editingItem ? 'Save changes' : 'Add to menu'}
+                    </Button>
+                  </DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {menu.length === 0 && <Card className="md:col-span-2 lg:col-span-3 bg-white/5 border-white/10"><CardContent className="p-10 text-center text-white/40">No items yet — add your first dish.</CardContent></Card>}
-              {menu.map(item => (
-                <Card key={item.id} className="bg-white/5 border-white/10 overflow-hidden">
-                  <div className="h-36 overflow-hidden"><img src={item.image || FOOD_IMG} alt={item.name} className="w-full h-full object-cover"/></div>
-                  <CardContent className="p-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {menu.length === 0 && (
+                <div className="sm:col-span-2 lg:col-span-3 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  No items yet — add your first dish.
+                </div>
+              )}
+              {menu.map((item) => (
+                <div key={item.id} className="rounded-2xl bg-white border border-neutral-200/80 overflow-hidden hover:shadow-md hover:shadow-neutral-900/5 transition-shadow">
+                  <div className="h-40 overflow-hidden bg-neutral-100">
+                    <img src={item.image || FOOD_IMG} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-semibold">{item.name}</div>
-                        <div className="text-xs text-white/50">{item.category}</div>
+                      <div className="min-w-0">
+                        <div className="font-semibold truncate">{item.name}</div>
+                        <div className="text-xs text-neutral-500">{item.category}</div>
                       </div>
-                      <div className="font-bold text-amber-300">${item.price.toFixed(2)}</div>
+                      <div className="font-bold text-emerald-800 tabular-nums">${item.price.toFixed(2)}</div>
                     </div>
-                    {item.description && <div className="text-xs text-white/60 mt-2 line-clamp-2">{item.description}</div>}
-                    {item.videoUrl && <div className="text-[11px] text-emerald-300/80 mt-2">Video attached</div>}
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2"><Switch checked={item.available} onCheckedChange={()=>toggleAvail(item)}/><span className="text-xs text-white/60">{item.available ? 'Available' : 'Out'}</span></div>
+                    {item.description && <div className="text-xs text-neutral-600 mt-2 line-clamp-2">{item.description}</div>}
+                    {item.videoUrl && <div className="text-[11px] text-emerald-700 mt-2 font-medium">▶ Video attached</div>}
+                    <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3">
+                      <div className="flex items-center gap-2">
+                        <Switch checked={item.available} onCheckedChange={() => toggleAvail(item)} />
+                        <span className="text-xs text-neutral-600">{item.available ? 'Available' : 'Out'}</span>
+                      </div>
                       <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={()=>{setEditingItem(item); setItemForm({ name:item.name, description:item.description||'', price:String(item.price), category:item.category, image:item.image||FOOD_IMG, videoUrl:item.videoUrl||'', available:item.available, moodTags: item.moodTags || [], tasteTags: item.tasteTags || [], dietaryTags: item.dietaryTags || [] }); setMenuOpen(true);}}><Pencil className="h-4 w-4"/></Button>
-                        <Button size="sm" variant="ghost" className="text-rose-400" onClick={()=>removeItem(item)}><Trash2 className="h-4 w-4"/></Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-neutral-500 hover:text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => {
+                            setEditingItem(item);
+                            setItemForm({
+                              name: item.name,
+                              description: item.description || '',
+                              price: String(item.price),
+                              category: item.category,
+                              image: item.image || FOOD_IMG,
+                              videoUrl: item.videoUrl || '',
+                              available: item.available,
+                              moodTags: item.moodTags || [],
+                              tasteTags: item.tasteTags || [],
+                              dietaryTags: item.dietaryTags || [],
+                            });
+                            setMenuOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => removeItem(item)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
           </TabsContent>
@@ -700,57 +882,98 @@ export default function ManagerDashboard() {
           {/* Tables */}
           <TabsContent value="tables" className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-white/60">{tables.length} tables</div>
+              <div className="text-sm text-neutral-600">
+                <span className="font-semibold text-neutral-900">{tables.length}</span> tables
+              </div>
               <Dialog open={tableOpen} onOpenChange={setTableOpen}>
-                <DialogTrigger asChild><Button className="bg-amber-400 text-black hover:bg-amber-300"><Plus className="h-4 w-4 mr-1"/>Add table</Button></DialogTrigger>
-                <DialogContent className="bg-[#111] border-white/10 text-white">
-                  <DialogHeader><DialogTitle>New table</DialogTitle></DialogHeader>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white">
+                    <Plus className="h-4 w-4 mr-1.5" />Add table
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white">
+                  <DialogHeader>
+                    <DialogTitle className="font-display tracking-tight">New table</DialogTitle>
+                  </DialogHeader>
                   <div className="space-y-3">
-                    <div><Label>Table number *</Label><Input value={tableForm.number} onChange={e=>setTableForm({...tableForm,number:e.target.value})} placeholder="e.g. 5" className="bg-white/5 border-white/10"/></div>
-                    <div><Label>Seats</Label><Input type="number" value={tableForm.seats} onChange={e=>setTableForm({...tableForm,seats:parseInt(e.target.value)||2})} className="bg-white/5 border-white/10"/></div>
+                    <div>
+                      <Label className="text-xs font-semibold">Table number *</Label>
+                      <Input value={tableForm.number} onChange={(e) => setTableForm({ ...tableForm, number: e.target.value })} placeholder="e.g. 5" className="mt-1.5 bg-white border-neutral-200" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold">Seats</Label>
+                      <Input type="number" value={tableForm.seats} onChange={(e) => setTableForm({ ...tableForm, seats: parseInt(e.target.value) || 2 })} className="mt-1.5 bg-white border-neutral-200" />
+                    </div>
                   </div>
-                  <DialogFooter><Button onClick={addTable} className="bg-amber-400 text-black hover:bg-amber-300">Add & generate QR</Button></DialogFooter>
+                  <DialogFooter>
+                    <Button onClick={addTable} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5">
+                      Add &amp; generate QR
+                    </Button>
+                  </DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {tables.length === 0 && <Card className="col-span-full bg-white/5 border-white/10"><CardContent className="p-10 text-center text-white/40">No tables yet — add tables to generate QR codes.</CardContent></Card>}
-              {tables.map(t => (
-                <Card key={t.id} className="bg-white/5 border-white/10">
-                  <CardContent className="p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-xs uppercase text-white/50">Table</div>
-                        <div className="text-3xl font-black">{t.number}</div>
-                        <div className="text-xs text-white/50">{t.seats} seats</div>
-                      </div>
-                      <Badge className={t.status === 'available' ? 'bg-green-400/20 text-green-300 border-green-400/30' : t.status === 'occupied' ? 'bg-rose-400/20 text-rose-300 border-rose-400/30' : 'bg-amber-400/20 text-amber-300 border-amber-400/30'}>{t.status}</Badge>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {tables.length === 0 && (
+                <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  No tables yet — add tables to generate QR codes.
+                </div>
+              )}
+              {tables.map((t) => (
+                <div key={t.id} className="rounded-2xl bg-white border border-neutral-200/80 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 font-medium">Table</div>
+                      <div className="font-display text-3xl font-extrabold tracking-tight">{t.number}</div>
+                      <div className="text-xs text-neutral-500">{t.seats} seats</div>
                     </div>
-                    <button onClick={()=>setTableQr(t)} className="mt-3 w-full rounded-lg bg-white p-2"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(tableUrl(t))}`} alt="qr" className="w-full"/></button>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button size="sm" variant="outline" className="border-white/20 bg-white/5 hover:bg-white/10 text-white" onClick={()=>printQR(t)}><Printer className="h-3.5 w-3.5 mr-1"/>Print</Button>
-                      <Button size="sm" variant="ghost" className="text-rose-400" onClick={()=>removeTable(t)}><Trash2 className="h-3.5 w-3.5 mr-1"/>Delete</Button>
-                    </div>
-                    <Select value={t.status} onValueChange={v=>setTableStatus(t,v)}>
-                      <SelectTrigger className="mt-2 bg-white/5 border-white/10 text-xs h-8"><SelectValue/></SelectTrigger>
-                      <SelectContent className="bg-[#111] text-white border-white/10">
-                        <SelectItem value="available">Available</SelectItem>
-                        <SelectItem value="occupied">Occupied</SelectItem>
-                        <SelectItem value="reserved">Reserved</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </CardContent>
-                </Card>
+                    <TableStatusBadge status={t.status} />
+                  </div>
+                  <button
+                    onClick={() => setTableQr(t)}
+                    className="mt-4 w-full rounded-xl bg-white border border-neutral-200 p-3 hover:border-emerald-300 transition"
+                  >
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(tableUrl(t))}`}
+                      alt="qr"
+                      className="w-full"
+                    />
+                  </button>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button size="sm" variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => printQR(t)}>
+                      <Printer className="h-3.5 w-3.5 mr-1" />Print
+                    </Button>
+                    <Button size="sm" variant="ghost" className="rounded-full text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => removeTable(t)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                    </Button>
+                  </div>
+                  <Select value={t.status} onValueChange={(v) => setTableStatus(t, v)}>
+                    <SelectTrigger className="mt-2 bg-white border-neutral-200 text-xs h-9 rounded-full"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="available">Available</SelectItem>
+                      <SelectItem value="occupied">Occupied</SelectItem>
+                      <SelectItem value="reserved">Reserved</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               ))}
             </div>
-            <Dialog open={!!tableQr} onOpenChange={v=>!v && setTableQr(null)}>
-              <DialogContent className="bg-[#111] border-white/10 text-white max-w-md">
-                <DialogHeader><DialogTitle>Table {tableQr?.number} · QR</DialogTitle></DialogHeader>
+            <Dialog open={!!tableQr} onOpenChange={(v) => !v && setTableQr(null)}>
+              <DialogContent className="bg-white max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="font-display tracking-tight">
+                    Table {tableQr?.number} · QR
+                  </DialogTitle>
+                </DialogHeader>
                 {tableQr && (
                   <div className="text-center">
-                    <div className="bg-white p-4 rounded-xl inline-block"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tableUrl(tableQr))}`}/></div>
-                    <div className="text-xs text-white/50 mt-3 break-all">{tableUrl(tableQr)}</div>
-                    <Button className="mt-4 bg-amber-400 text-black hover:bg-amber-300" onClick={()=>printQR(tableQr)}><Printer className="h-4 w-4 mr-2"/>Print</Button>
+                    <div className="bg-white p-5 rounded-2xl inline-block border border-neutral-200">
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tableUrl(tableQr))}`} />
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-3 break-all">{tableUrl(tableQr)}</div>
+                    <Button className="mt-5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5" onClick={() => printQR(tableQr)}>
+                      <Printer className="h-4 w-4 mr-2" />Print
+                    </Button>
                   </div>
                 )}
               </DialogContent>
@@ -760,8 +983,10 @@ export default function ManagerDashboard() {
           {/* Kitchen */}
           <TabsContent value="kitchen" className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-white/60">{pendingOrders.length} active tickets · bilingual EN/ES</div>
-              <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1">
+              <div className="text-sm text-neutral-600">
+                <span className="font-semibold text-neutral-900">{pendingOrders.length}</span> active tickets · bilingual EN/ES
+              </div>
+              <div className="inline-flex rounded-full border border-neutral-200 bg-white p-1">
                 {[
                   ['en', 'English'],
                   ['es', 'Spanish'],
@@ -771,49 +996,86 @@ export default function ManagerDashboard() {
                     key={value}
                     type="button"
                     onClick={() => setKitchenLanguage(value)}
-                    className={`rounded-md px-3 py-1.5 text-xs transition ${kitchenLanguage === value ? 'bg-amber-400 text-black' : 'text-white/70 hover:bg-white/10'}`}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                      kitchenLanguage === value ? 'bg-emerald-700 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                    }`}
                   >
                     {label}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pendingOrders.length === 0 && <Card className="col-span-full bg-white/5 border-white/10"><CardContent className="p-10 text-center text-white/40">No tickets in the kitchen.</CardContent></Card>}
-              {pendingOrders.map(o => (
-                <Card key={o.id} className="bg-white/5 border-white/10">
-                  <CardContent className="p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-xs text-white/50">Ticket #{o.id.slice(0,6).toUpperCase()}</div>
-                        <div className="text-2xl font-black">
-                          {kitchenLanguage === 'es' ? `Mesa ${o.tableNumber}` : kitchenLanguage === 'both' ? `Table ${o.tableNumber} · Mesa ${o.tableNumber}` : `Table ${o.tableNumber}`}
-                        </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingOrders.length === 0 && (
+                <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  No tickets in the kitchen.
+                </div>
+              )}
+              {pendingOrders.map((o) => (
+                <div key={o.id} className={`rounded-2xl bg-white border p-5 ${o.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200/60' : 'border-neutral-200'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-neutral-400">
+                        Ticket #{o.id.slice(0, 6).toUpperCase()}
                       </div>
-                      <Badge className={o.status === 'pending' ? 'bg-amber-400/20 text-amber-300 border-amber-400/30' : 'bg-blue-400/20 text-blue-300 border-blue-400/30'}>{o.status}</Badge>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {o.items.map((i,idx) => (
-                        <div key={idx} className="rounded-lg bg-black/40 border border-white/5 p-2">
-                          <div className="font-semibold">{i.qty}× {kitchenLanguage === 'es' ? (i.nameEs || i.name) : i.name}</div>
-                          {kitchenLanguage === 'both' && i.nameEs && <div className="text-xs text-amber-300/80">{i.qty}× {i.nameEs}</div>}
-                          {i.notes && <div className="text-xs text-white/50 mt-1">{kitchenLanguage === 'es' ? 'Nota' : kitchenLanguage === 'both' ? 'Note / Nota' : 'Note'}: {i.notes}</div>}
-                        </div>
-                      ))}
-                    </div>
-                    {(o.allergy || o.spicyLevel) && (
-                      <div className="mt-3 rounded-lg bg-rose-400/10 border border-rose-400/30 p-2 text-xs">
-                        {o.allergy && <div><span className="font-semibold text-rose-300">{kitchenLanguage === 'es' ? 'Alergia' : kitchenLanguage === 'both' ? 'Allergy / Alergia' : 'Allergy'}:</span> {o.allergy}</div>}
-                        {o.spicyLevel && <div><span className="font-semibold text-rose-300">{kitchenLanguage === 'es' ? 'Picante' : kitchenLanguage === 'both' ? 'Spice / Picante' : 'Spice'}:</span> {o.spicyLevel}</div>}
+                      <div className="font-display text-2xl font-extrabold tracking-tight mt-0.5">
+                        {kitchenLanguage === 'es' ? `Mesa ${o.tableNumber}` : kitchenLanguage === 'both' ? `Table ${o.tableNumber}` : `Table ${o.tableNumber}`}
                       </div>
+                      {kitchenLanguage === 'both' && <div className="text-xs text-emerald-700/80">Mesa {o.tableNumber}</div>}
+                    </div>
+                    <OrderStatusBadge status={o.status} />
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {o.items.map((i, idx) => (
+                      <div key={idx} className="rounded-xl bg-neutral-50 border border-neutral-100 p-2.5">
+                        <div className="font-semibold">
+                          <span className="text-emerald-700">{i.qty}×</span>{' '}
+                          {kitchenLanguage === 'es' ? (i.nameEs || i.name) : i.name}
+                        </div>
+                        {kitchenLanguage === 'both' && i.nameEs && (
+                          <div className="text-xs text-neutral-500 ml-5">{i.qty}× {i.nameEs}</div>
+                        )}
+                        {i.notes && (
+                          <div className="text-xs text-neutral-600 mt-1 ml-5 inline-flex items-center gap-1">
+                            <FileText className="h-3 w-3" />Note: {i.notes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(o.allergy || o.spicyLevel) && (
+                    <div className="mt-3 rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs space-y-1">
+                      {o.allergy && (
+                        <div className="text-rose-800 flex items-start gap-1.5">
+                          <AlertTriangle className="h-3 w-3 mt-0.5" />
+                          <span><span className="font-semibold">Allergy:</span> {o.allergy}</span>
+                        </div>
+                      )}
+                      {o.spicyLevel && (
+                        <div className="text-amber-800 flex items-start gap-1.5">
+                          <Flame className="h-3 w-3 mt-0.5" />
+                          <span><span className="font-semibold">Spice:</span> {o.spicyLevel}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-4 flex justify-between items-center border-t border-neutral-100 pt-3">
+                    <div className="text-xs text-neutral-400 inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {o.status === 'pending' && (
+                      <Button size="sm" onClick={() => setOrderStatus(o, 'preparing')} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white">
+                        Start
+                      </Button>
                     )}
-                    <div className="mt-3 flex justify-between">
-                      <div className="text-xs text-white/40 inline-flex items-center"><Clock className="h-3 w-3 mr-1"/>{new Date(o.createdAt).toLocaleTimeString()}</div>
-                      {o.status === 'pending' && <Button size="sm" onClick={()=>setOrderStatus(o,'preparing')} className="bg-amber-400 text-black hover:bg-amber-300">{kitchenLanguage === 'es' ? 'Iniciar' : kitchenLanguage === 'both' ? 'Start / Iniciar' : 'Start'}</Button>}
-                      {o.status === 'preparing' && <Button size="sm" onClick={()=>setOrderStatus(o,'ready')} className="bg-green-500 hover:bg-green-400"><CheckCircle2 className="h-3.5 w-3.5 mr-1"/>{kitchenLanguage === 'es' ? 'Listo' : kitchenLanguage === 'both' ? 'Ready / Listo' : 'Ready'}</Button>}
-                    </div>
-                  </CardContent>
-                </Card>
+                    {o.status === 'preparing' && (
+                      <Button size="sm" onClick={() => setOrderStatus(o, 'ready')} className="rounded-full bg-neutral-900 hover:bg-neutral-800 text-white">
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />Ready
+                      </Button>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </TabsContent>
@@ -822,28 +1084,77 @@ export default function ManagerDashboard() {
 
       {/* Support Contact Dialog */}
       <Dialog open={supportOpen} onOpenChange={setSupportOpen}>
-        <DialogContent className="bg-[#111] border-white/10 text-white max-w-lg h-[500px] flex flex-col p-0">
-          <DialogHeader className="p-4 border-b border-white/10 shrink-0"><DialogTitle>Contact Netrik Support</DialogTitle></DialogHeader>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="text-center text-xs text-white/40">This chat connects you directly with Central Admin.</div>
-            {supportMessages.map(m => (
+        <DialogContent className="bg-white max-w-lg h-[500px] flex flex-col p-0">
+          <DialogHeader className="p-5 border-b border-neutral-200 shrink-0">
+            <DialogTitle className="font-display tracking-tight">Contact Netrik Support</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-neutral-50/40">
+            <div className="text-center text-xs text-neutral-500">
+              This chat connects you directly with Central Admin.
+            </div>
+            {supportMessages.map((m) => (
               <div key={m.id} className={`flex flex-col ${m.sender === 'central' ? 'items-start' : 'items-end'}`}>
-                {m.sender === 'central' && <div className="text-xs text-amber-300/80 mb-1 ml-1">Netrik Shop HQ</div>}
-                <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.sender === 'restaurant' ? 'bg-[#635BFF] text-white rounded-br-sm' : 'bg-white/10 text-white rounded-bl-sm'}`}>
+                {m.sender === 'central' && (
+                  <div className="text-xs text-emerald-700 mb-1 ml-1 font-semibold">Netrik Shop HQ</div>
+                )}
+                <div
+                  className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${
+                    m.sender === 'restaurant'
+                      ? 'bg-emerald-700 text-white rounded-br-sm'
+                      : 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-sm'
+                  }`}
+                >
                   {m.message}
                 </div>
-                <div className="text-[10px] text-white/30 mt-1">{new Date(m.created_at).toLocaleString()}</div>
+                <div className="text-[10px] text-neutral-400 mt-1">{new Date(m.created_at).toLocaleString()}</div>
               </div>
             ))}
           </div>
-          <div className="p-4 border-t border-white/10 shrink-0 bg-black/50">
+          <div className="p-4 border-t border-neutral-200 shrink-0 bg-white">
             <div className="flex gap-2">
-              <Input value={supportText} onChange={e=>setSupportText(e.target.value)} placeholder="Type your message..." className="bg-white/5 border-white/10" onKeyDown={e => e.key === 'Enter' && sendSupportMsg()}/>
-              <Button onClick={sendSupportMsg} className="bg-amber-400 text-black hover:bg-amber-300">Send</Button>
+              <Input
+                value={supportText}
+                onChange={(e) => setSupportText(e.target.value)}
+                placeholder="Type your message..."
+                className="bg-white border-neutral-200 focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
+                onKeyDown={(e) => e.key === 'Enter' && sendSupportMsg()}
+              />
+              <Button onClick={sendSupportMsg} className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5">
+                <Send className="h-3.5 w-3.5" />
+              </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function OrderStatusBadge({ status }) {
+  const styles = {
+    pending: 'bg-amber-100 text-amber-800 border-amber-200',
+    preparing: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    ready: 'bg-neutral-900 text-white border-neutral-900',
+    served: 'bg-neutral-100 text-neutral-700 border-neutral-200',
+    paid: 'bg-emerald-700 text-white border-emerald-700',
+    cancelled: 'bg-rose-100 text-rose-800 border-rose-200',
+  };
+  return (
+    <Badge className={`rounded-full text-[10px] uppercase tracking-wider font-semibold ${styles[status] || 'bg-neutral-100 text-neutral-700 border-neutral-200'}`}>
+      {status}
+    </Badge>
+  );
+}
+
+function TableStatusBadge({ status }) {
+  const styles = {
+    available: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    occupied: 'bg-rose-100 text-rose-800 border-rose-200',
+    reserved: 'bg-amber-100 text-amber-800 border-amber-200',
+  };
+  return (
+    <Badge className={`rounded-full text-[10px] uppercase tracking-wider font-semibold ${styles[status] || 'bg-neutral-100 text-neutral-700 border-neutral-200'}`}>
+      {status}
+    </Badge>
   );
 }
