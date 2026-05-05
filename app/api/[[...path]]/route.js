@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getSupabase, restaurantToApi, menuToApi, tableToApi, orderToApi } from '@/lib/supabase';
-import { llmChat } from '@/lib/llm';
+import { llmChat, geminiWaiterChat } from '@/lib/llm';
 import { nluRespond } from '@/lib/nlu';
 import { sendRestaurantOnboardingEmail } from '@/lib/mailer';
+
+// Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
+async function aiWaiterReply({ message, menu, cart, allergy, spicy, notes, stage, restaurantName, history, language }) {
+  try {
+    const ai = await geminiWaiterChat({
+      context: { restaurantName, menu, cart, allergy, spicy, notes, stage, language },
+      history,
+      userMessage: message,
+    });
+    if (ai && ai.reply) return ai;
+  } catch (e) {
+    console.error('Gemini waiter failed, using NLU fallback:', e?.message || e);
+  }
+  return nluRespond({ message, menu, cart, allergy, spicy, notes, stage, restaurantName, history, language });
+}
 
 const json = (data, status = 200) => NextResponse.json(data, { status });
 const err = (message, status = 400) => NextResponse.json({ error: message }, { status });
@@ -857,7 +872,7 @@ async function handleDemoRequest(path, method, request) {
     return json({ totalRestaurants: restaurants.length, totalRevenue, totalOrders: orders.length, mrr, byPlan, trend });
   }
 
-  // ============ AI WAITER CHAT (LOCAL NLU — NO EXTERNAL API) ============
+  // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
   if (path === 'chat' && method === 'POST') {
     const body = await request.json();
     const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', spicy = '', notes = '', stage = 'browsing' } = body;
@@ -866,7 +881,7 @@ async function handleDemoRequest(path, method, request) {
     const idx = db.chat_sessions.findIndex((s) => s.session_id === sessionId);
     const prev = idx >= 0 ? db.chat_sessions[idx] : { history: [] };
 
-    const { reply, actions } = nluRespond({
+    const { reply, actions } = await aiWaiterReply({
       message, menu, cart, allergy, spicy, notes, stage,
       restaurantName: restaurant?.name, history: prev.history || [], language,
     });
@@ -915,7 +930,15 @@ async function handler(request, { params }) {
       }
       if (type === 'server') {
         // Try Supabase first, fall back to demo
-        const { data, error } = await sb.from('servers').select('*').eq('user_id', userId).eq('password', password).maybeSingle().catch(() => ({ data: null, error: { code: 'NO_TABLE' } }));
+        let data = null;
+        let error = null;
+        try {
+          const r = await sb.from('servers').select('*').eq('user_id', userId).eq('password', password).maybeSingle();
+          data = r.data;
+          error = r.error;
+        } catch (e) {
+          error = { code: 'NO_TABLE', message: e?.message || 'servers table missing' };
+        }
         if (data) {
           const { data: rest } = await sb.from('restaurants').select('id,name').eq('id', data.restaurant_id).maybeSingle();
           return json({
@@ -997,7 +1020,13 @@ async function handler(request, { params }) {
         { restaurant_id: data.id, name: 'Server 1', user_id: 'server1_' + s, password: randPwd(), assigned_table_ids: [] },
         { restaurant_id: data.id, name: 'Server 2', user_id: 'server2_' + s, password: randPwd(), assigned_table_ids: [] },
       ];
-      const { data: serverData } = await sb.from('servers').insert(servers).select('*').catch(() => ({ data: null }));
+      let serverData = null;
+      try {
+        const r = await sb.from('servers').insert(servers).select('*');
+        if (!r.error) serverData = r.data;
+      } catch (e) {
+        console.error('Server account insert failed (table may not exist):', e?.message || e);
+      }
       
       const restaurant = restaurantToApi(data);
       const onboardingData = {
@@ -1466,7 +1495,7 @@ async function handler(request, { params }) {
       return json({ totalRestaurants: (restaurants || []).length, totalRevenue, totalOrders: (orders || []).length, mrr, byPlan, trend });
     }
 
-    // ============ AI WAITER CHAT (LOCAL NLU — NO EXTERNAL API) ============
+    // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
     if (path === 'chat' && method === 'POST') {
       const body = await request.json();
       const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', spicy = '', notes = '', stage = 'browsing' } = body;
@@ -1474,7 +1503,7 @@ async function handler(request, { params }) {
       const { data: session } = await sb.from('chat_sessions').select('*').eq('session_id', sessionId).maybeSingle();
       const history = (session?.history || []);
 
-      const { reply, actions } = nluRespond({
+      const { reply, actions } = await aiWaiterReply({
         message, menu, cart, allergy, spicy, notes, stage,
         restaurantName: restaurant?.name, history, language,
       });
