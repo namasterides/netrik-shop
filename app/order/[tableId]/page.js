@@ -266,7 +266,7 @@ export default function CustomerOrder() {
         body: JSON.stringify({
           sessionId, restaurantId: restaurant.id, tableId: table.id, language: 'en',
           message: text,
-          menu: menu.map(m => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category })),
+          menu: menu.map(m => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [] })),
           cart,
           allergy, spicy, notes,
           stage,
@@ -276,8 +276,12 @@ export default function CustomerOrder() {
       if (!res.ok) throw new Error(data.error || 'Chat failed');
 
       const assistantText = String(data.reply || '').trim();
-      if (assistantText) {
-        setMessages(m => [...m, { role: 'assistant', text: assistantText }]);
+      const suggestedIds = Array.isArray(data.actions?.suggest_items) ? data.actions.suggest_items : [];
+      const suggestedItems = suggestedIds
+        .map((id) => menu.find((m) => m.id === id))
+        .filter(Boolean);
+      if (assistantText || suggestedItems.length) {
+        setMessages(m => [...m, { role: 'assistant', text: assistantText, items: suggestedItems }]);
       }
 
       let nextCart = cart;
@@ -368,15 +372,53 @@ export default function CustomerOrder() {
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 pt-2 hide-scrollbar scroll-smooth">
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-            {m.role === 'assistant' && (
-              <div className="w-6 h-6 rounded-full bg-white/10 shrink-0 mr-2 mt-auto mb-1 flex items-center justify-center">
-                <ChefHat className="w-3.5 h-3.5 text-white/60" />
+          <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+            <div className={`flex w-full ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {m.role === 'assistant' && (
+                <div className="w-6 h-6 rounded-full bg-white/10 shrink-0 mr-2 mt-auto mb-1 flex items-center justify-center">
+                  <ChefHat className="w-3.5 h-3.5 text-white/60" />
+                </div>
+              )}
+              {m.text && (
+                <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-black rounded-br-sm font-medium' : 'bg-[#1c1c1e] text-white/90 rounded-bl-sm border border-white/5'}`}>
+                  {m.text}
+                </div>
+              )}
+            </div>
+            {m.role === 'assistant' && Array.isArray(m.items) && m.items.length > 0 && (
+              <div className="ml-8 mt-2 w-[calc(100%-2rem)] grid grid-cols-2 gap-2">
+                {m.items.map((item) => {
+                  const inCart = cart.find((c) => c.id === item.id);
+                  return (
+                    <div key={item.id} className="rounded-2xl bg-[#1c1c1e] border border-white/10 overflow-hidden flex flex-col shadow-sm hover:border-amber-300/40 transition-colors">
+                      <div className="relative h-20 overflow-hidden">
+                        <img src={item.image || FALLBACK_MENU_IMAGE} alt={item.name} className="w-full h-full object-cover" />
+                        {(item.tasteTags?.length || item.moodTags?.length) ? (
+                          <div className="absolute bottom-1 left-1 right-1 flex flex-wrap gap-0.5 overflow-hidden">
+                            {[...(item.tasteTags || []), ...(item.moodTags || [])].slice(0, 2).map((t) => (
+                              <span key={t} className="rounded-full bg-black/70 backdrop-blur px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-white/85">{t}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="p-2.5 flex-1 flex flex-col">
+                        <div className="text-[13px] font-semibold leading-tight line-clamp-2">{item.name}</div>
+                        {item.description && <div className="text-[10px] text-white/50 mt-0.5 line-clamp-2">{item.description}</div>}
+                        <div className="mt-auto pt-1.5 flex items-center justify-between">
+                          <div className="text-sm font-bold text-amber-300">${Number(item.price).toFixed(2)}</div>
+                          <button
+                            onClick={() => addToCartItem(item)}
+                            className={`h-7 min-w-[44px] rounded-full text-[11px] font-bold transition active:scale-95 ${inCart ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30' : 'bg-amber-400 text-black hover:bg-amber-300'}`}
+                          >
+                            {inCart ? `× ${inCart.qty}` : '+ Add'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-black rounded-br-sm font-medium' : 'bg-[#1c1c1e] text-white/90 rounded-bl-sm border border-white/5'}`}>
-              {m.text}
-            </div>
           </div>
         ))}
         {sending && (

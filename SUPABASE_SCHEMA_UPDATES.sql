@@ -99,9 +99,22 @@ CREATE TRIGGER update_servers_updated_at
 -- Run these to verify everything is set up correctly
 -- ============================================
 
+-- ============================================
+-- AI WAITER: MENU TAG COLUMNS (mood / taste / dietary)
+-- These let the AI match dishes to a guest's vibe instead of guessing.
+-- ============================================
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS mood_tags    TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS taste_tags   TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS dietary_tags TEXT[] NOT NULL DEFAULT '{}';
+
+-- Optional: GIN indexes for fast tag-based filtering on large menus.
+CREATE INDEX IF NOT EXISTS idx_menu_mood_tags    ON public.menu USING GIN (mood_tags);
+CREATE INDEX IF NOT EXISTS idx_menu_taste_tags   ON public.menu USING GIN (taste_tags);
+CREATE INDEX IF NOT EXISTS idx_menu_dietary_tags ON public.menu USING GIN (dietary_tags);
+
 -- Verify servers table structure
-SELECT column_name, data_type, is_nullable 
-FROM information_schema.columns 
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
 WHERE table_name = 'servers'
 ORDER BY ordinal_position;
 

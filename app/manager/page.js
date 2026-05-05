@@ -19,6 +19,72 @@ import { NetrikLogo } from '@/components/netrik-logo';
 
 const CATEGORIES = ['Starters', 'Mains', 'Desserts', 'Drinks', 'Specials'];
 const FOOD_IMG = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
+const MOOD_PRESETS = ['light', 'hearty', 'comfort', 'indulgent', 'energizing', 'romantic', 'celebratory', 'cozy', 'refreshing', 'adventurous'];
+const TASTE_PRESETS = ['tangy', 'sweet', 'savory', 'spicy', 'rich', 'smoky', 'fresh', 'umami', 'sour', 'bitter', 'crispy', 'creamy', 'buttery', 'zesty'];
+const DIETARY_PRESETS = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'nut-free', 'halal', 'kosher', 'keto', 'low-carb', 'high-protein', 'jain'];
+
+function TagPicker({ label, hint, value, onChange, presets, accent = 'amber' }) {
+  const tags = Array.isArray(value) ? value : [];
+  const [draft, setDraft] = useState('');
+  const accentMap = {
+    amber: 'bg-amber-400/20 text-amber-200 border-amber-300/40',
+    rose: 'bg-rose-400/20 text-rose-200 border-rose-300/40',
+    emerald: 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40',
+  };
+  const cls = accentMap[accent] || accentMap.amber;
+  const norm = (s) => String(s || '').trim().toLowerCase().slice(0, 24);
+  const add = (raw) => {
+    const t = norm(raw);
+    if (!t || tags.includes(t) || tags.length >= 8) return;
+    onChange([...tags, t]);
+  };
+  const remove = (t) => onChange(tags.filter((x) => x !== t));
+  const handleKey = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      add(draft);
+      setDraft('');
+    } else if (e.key === 'Backspace' && !draft && tags.length) {
+      remove(tags[tags.length - 1]);
+    }
+  };
+  return (
+    <div>
+      <Label>{label}</Label>
+      {hint && <div className="text-[11px] text-white/40 mt-0.5 mb-1">{hint}</div>}
+      <div className="rounded-md border border-white/10 bg-white/5 p-2 min-h-[40px] flex flex-wrap gap-1.5">
+        {tags.map((t) => (
+          <span key={t} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${cls}`}>
+            {t}
+            <button type="button" onClick={() => remove(t)} className="opacity-60 hover:opacity-100">×</button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKey}
+          onBlur={() => { if (draft.trim()) { add(draft); setDraft(''); } }}
+          placeholder={tags.length === 0 ? 'Type & Enter…' : ''}
+          className="flex-1 min-w-[80px] bg-transparent text-sm focus:outline-none placeholder:text-white/30"
+        />
+      </div>
+      {presets && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {presets.filter((p) => !tags.includes(p)).slice(0, 12).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => add(p)}
+              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/60 hover:bg-white/10 hover:text-white"
+            >
+              + {p}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 const RANDOM_MENU_IMAGES = [
   'https://images.unsplash.com/photo-1544025162-811114bd020f?auto=format&fit=crop&w=1000&q=80',
   'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1000&q=80',
@@ -152,7 +218,7 @@ export default function ManagerDashboard() {
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) return toast.error('Failed');
     toast.success(editingItem ? 'Item updated' : 'Item added');
-    setMenuOpen(false); setEditingItem(null); setItemForm({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true });
+    setMenuOpen(false); setEditingItem(null); setItemForm({ name: '', description: '', price: '', category: 'Mains', image: FOOD_IMG, videoUrl: '', available: true, moodTags: [], tasteTags: [], dietaryTags: [] });
     loadAll(me);
   };
 
@@ -524,9 +590,9 @@ export default function ManagerDashboard() {
               <div className="text-sm text-white/60">{menu.length} items · {menu.filter(m=>m.available).length} available</div>
               <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
                 <DialogTrigger asChild><Button onClick={()=>{setEditingItem(null); setItemForm({ name:'', description:'', price:'', category:'Mains', image:FOOD_IMG, videoUrl:'', available:true })}} className="bg-amber-400 text-black hover:bg-amber-300"><Plus className="h-4 w-4 mr-1"/>Add item</Button></DialogTrigger>
-                <DialogContent className="bg-[#111] border-white/10 text-white max-w-lg">
-                  <DialogHeader><DialogTitle>{editingItem ? 'Edit item' : 'New menu item'}</DialogTitle></DialogHeader>
-                  <div className="space-y-3">
+                <DialogContent className="bg-[#111] border-white/10 text-white max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">
+                  <DialogHeader className="px-6 pt-6 pb-2 shrink-0"><DialogTitle>{editingItem ? 'Edit item' : 'New menu item'}</DialogTitle></DialogHeader>
+                  <div className="space-y-3 px-6 py-2 overflow-y-auto flex-1 min-h-0">
                     <div><Label>Name *</Label><Input value={itemForm.name} onChange={e=>setItemForm({...itemForm,name:e.target.value})} className="bg-white/5 border-white/10"/></div>
                     <div><Label>Description</Label><Textarea value={itemForm.description} onChange={e=>setItemForm({...itemForm,description:e.target.value})} className="bg-white/5 border-white/10"/></div>
                     <div className="grid grid-cols-2 gap-3">
@@ -569,9 +635,37 @@ export default function ManagerDashboard() {
                         <video src={itemForm.videoUrl} controls muted className="h-32 w-full rounded-md object-cover"/>
                       </div>
                     )}
+                    <div className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 space-y-3">
+                      <div className="text-[11px] uppercase tracking-widest text-amber-300/80 font-semibold">AI Waiter tags</div>
+                      <div className="text-[11px] text-white/50 -mt-2">These help the AI suggest this dish when guests describe their craving.</div>
+                      <TagPicker
+                        label="Mood"
+                        hint="When would a guest want this? e.g. light, comfort, celebratory"
+                        value={itemForm.moodTags || []}
+                        onChange={(v) => setItemForm({ ...itemForm, moodTags: v })}
+                        presets={MOOD_PRESETS}
+                        accent="amber"
+                      />
+                      <TagPicker
+                        label="Taste"
+                        hint="What does it taste like? e.g. tangy, smoky, creamy"
+                        value={itemForm.tasteTags || []}
+                        onChange={(v) => setItemForm({ ...itemForm, tasteTags: v })}
+                        presets={TASTE_PRESETS}
+                        accent="rose"
+                      />
+                      <TagPicker
+                        label="Dietary"
+                        hint="Any dietary fits? e.g. vegan, gluten-free"
+                        value={itemForm.dietaryTags || []}
+                        onChange={(v) => setItemForm({ ...itemForm, dietaryTags: v })}
+                        presets={DIETARY_PRESETS}
+                        accent="emerald"
+                      />
+                    </div>
                     <div className="flex items-center justify-between rounded-lg border border-white/10 p-3"><div><div className="text-sm font-medium">Available</div><div className="text-xs text-white/50">Show on customer menu</div></div><Switch checked={itemForm.available} onCheckedChange={v=>setItemForm({...itemForm,available:v})}/></div>
                   </div>
-                  <DialogFooter><Button onClick={saveItem} className="bg-amber-400 text-black hover:bg-amber-300">{editingItem ? 'Save' : 'Add'}</Button></DialogFooter>
+                  <DialogFooter className="px-6 py-4 border-t border-white/10 shrink-0 bg-[#111]"><Button onClick={saveItem} className="bg-amber-400 text-black hover:bg-amber-300">{editingItem ? 'Save' : 'Add'}</Button></DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
@@ -593,7 +687,7 @@ export default function ManagerDashboard() {
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex items-center gap-2"><Switch checked={item.available} onCheckedChange={()=>toggleAvail(item)}/><span className="text-xs text-white/60">{item.available ? 'Available' : 'Out'}</span></div>
                       <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={()=>{setEditingItem(item); setItemForm({ name:item.name, description:item.description||'', price:String(item.price), category:item.category, image:item.image||FOOD_IMG, videoUrl:item.videoUrl||'', available:item.available }); setMenuOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+                        <Button size="sm" variant="ghost" onClick={()=>{setEditingItem(item); setItemForm({ name:item.name, description:item.description||'', price:String(item.price), category:item.category, image:item.image||FOOD_IMG, videoUrl:item.videoUrl||'', available:item.available, moodTags: item.moodTags || [], tasteTags: item.tasteTags || [], dietaryTags: item.dietaryTags || [] }); setMenuOpen(true);}}><Pencil className="h-4 w-4"/></Button>
                         <Button size="sm" variant="ghost" className="text-rose-400" onClick={()=>removeItem(item)}><Trash2 className="h-4 w-4"/></Button>
                       </div>
                     </div>

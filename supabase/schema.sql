@@ -56,9 +56,15 @@ CREATE TABLE IF NOT EXISTS public.menu (
   image         TEXT DEFAULT '',
   video_url     TEXT DEFAULT '',
   available     BOOLEAN NOT NULL DEFAULT TRUE,
+  mood_tags     TEXT[] NOT NULL DEFAULT '{}',
+  taste_tags    TEXT[] NOT NULL DEFAULT '{}',
+  dietary_tags  TEXT[] NOT NULL DEFAULT '{}',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS mood_tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS taste_tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS dietary_tags TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_menu_restaurant ON public.menu(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_menu_available  ON public.menu(restaurant_id, available);
 

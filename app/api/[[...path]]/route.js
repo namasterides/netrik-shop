@@ -60,6 +60,25 @@ const DEMO_UPI_VPA = 'netrik@upi';
 const DEMO_UPI_AUTO_SETTLE_MS = 9000;
 
 const toAmount = (value) => Number.parseFloat(value || 0).toFixed(2);
+
+// Normalize a tag list: accepts array or comma-separated string,
+// trims, lowercases, dedupes, caps to 8 entries × 24 chars each.
+const normalizeTagList = (input) => {
+  if (input == null) return [];
+  const arr = Array.isArray(input)
+    ? input
+    : String(input).split(/[,\n]/);
+  const seen = new Set();
+  const out = [];
+  for (const raw of arr) {
+    const t = String(raw || '').trim().toLowerCase().slice(0, 24);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= 8) break;
+  }
+  return out;
+};
 const makeUpiReference = () => `UPI${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const buildUpiUri = ({ vpa, name, amount, reference }) => {
   const params = new URLSearchParams({
@@ -528,6 +547,9 @@ async function handleDemoRequest(path, method, request) {
       image: normalizeImage(body.image) || getRandomFoodImage(),
       video_url: String(body.videoUrl || '').trim(),
       available: body.available !== false,
+      mood_tags: normalizeTagList(body.moodTags),
+      taste_tags: normalizeTagList(body.tasteTags),
+      dietary_tags: normalizeTagList(body.dietaryTags),
       created_at: nowIso(),
     };
     db.menu.push(row);
@@ -551,6 +573,9 @@ async function handleDemoRequest(path, method, request) {
       if (body.videoUrl !== undefined) row.video_url = String(body.videoUrl || '').trim();
       if (body.available !== undefined) row.available = body.available;
       if (body.nameEs !== undefined) row.name_es = body.nameEs;
+      if (body.moodTags !== undefined) row.mood_tags = normalizeTagList(body.moodTags);
+      if (body.tasteTags !== undefined) row.taste_tags = normalizeTagList(body.tasteTags);
+      if (body.dietaryTags !== undefined) row.dietary_tags = normalizeTagList(body.dietaryTags);
       return json({ ok: true });
     }
 
@@ -1093,6 +1118,9 @@ async function handler(request, { params }) {
         image: normalizeImage(body.image) || getRandomFoodImage(),
         video_url: String(body.videoUrl || '').trim(),
         available: body.available !== false,
+        mood_tags: normalizeTagList(body.moodTags),
+        taste_tags: normalizeTagList(body.tasteTags),
+        dietary_tags: normalizeTagList(body.dietaryTags),
       };
       const { data, error } = await sb.from('menu').insert(row).select('*').single();
       if (error) return err(error.message, 500);
@@ -1112,6 +1140,9 @@ async function handler(request, { params }) {
         if (body.videoUrl !== undefined) upd.video_url = String(body.videoUrl || '').trim();
         if (body.available !== undefined) upd.available = body.available;
         if (body.nameEs !== undefined) upd.name_es = body.nameEs;
+        if (body.moodTags !== undefined) upd.mood_tags = normalizeTagList(body.moodTags);
+        if (body.tasteTags !== undefined) upd.taste_tags = normalizeTagList(body.tasteTags);
+        if (body.dietaryTags !== undefined) upd.dietary_tags = normalizeTagList(body.dietaryTags);
         const { error } = await sb.from('menu').update(upd).eq('id', id);
         if (error) return err(error.message, 500);
         return json({ ok: true });
