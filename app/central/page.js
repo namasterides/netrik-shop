@@ -249,12 +249,9 @@ export default function CentralAdmin() {
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
         <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <NetrikLogo className="h-9 w-9" />
+            <NetrikLogo variant="wordmark" className="h-8 w-auto" />
             <div className="min-w-0">
               <div className="font-bold tracking-tight">Central Admin</div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-700/80 font-semibold">
-                Netrik Shop · HQ
-              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -575,7 +572,6 @@ export default function CentralAdmin() {
                         )}
                         <div>
                           <div className="font-semibold text-neutral-900">{r.name}</div>
-                          <div className="text-xs text-neutral-400">by Netrik Shop</div>
                         </div>
                       </div>
                     </td>

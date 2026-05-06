@@ -60,11 +60,7 @@ export default function LoginPage() {
         <div className="absolute -left-20 bottom-0 w-[360px] h-[360px] bg-emerald-600/30 blur-3xl rounded-full pointer-events-none" />
 
         <Link href="/" className="relative flex items-center gap-2.5 group w-fit">
-          <NetrikLogo className="h-9 w-9" />
-          <div className="leading-tight">
-            <div className="text-[15px] font-bold tracking-tight">Netrik Shop</div>
-            <div className="text-[10px] tracking-[0.2em] text-emerald-200/70 uppercase">Restaurant OS</div>
-          </div>
+          <NetrikLogo variant="wordmark" className="h-9 w-auto" />
         </Link>
 
         <div className="relative max-w-md">
@@ -96,7 +92,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative text-[11px] text-emerald-100/60">
-          © {new Date().getFullYear()} Netrik Shop · Restaurant OS
+          © {new Date().getFullYear()}
         </div>
       </div>
 
@@ -112,8 +108,7 @@ export default function LoginPage() {
 
           {/* Mobile-only logo */}
           <div className="lg:hidden mt-5 flex items-center gap-2.5">
-            <NetrikLogo className="h-9 w-9" />
-            <div className="text-[15px] font-bold tracking-tight">Netrik Shop</div>
+            <NetrikLogo variant="wordmark" className="h-8 w-auto" />
           </div>
 
           <h1 className="mt-6 font-display text-3xl md:text-4xl font-bold tracking-tight">Sign in</h1>

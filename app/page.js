@@ -112,11 +112,7 @@ export default function Landing() {
       >
         <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <NetrikLogo className="h-9 w-9" />
-            <div className="leading-tight">
-              <div className="text-[15px] font-bold tracking-tight">Netrik Shop</div>
-              <div className="text-[10px] tracking-[0.18em] text-neutral-500 uppercase">Restaurant OS</div>
-            </div>
+            <NetrikLogo variant="wordmark" className="h-8 w-auto" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-9 text-[14px] font-medium text-neutral-600">
@@ -447,9 +443,9 @@ export default function Landing() {
       {/* ───────── FOOTER ───────── */}
       <footer className="border-t border-neutral-200/80 py-10 px-5 md:px-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-neutral-500">
-          <div className="flex items-center gap-2.5">
-            <NetrikLogo className="h-7 w-7" />
-            <span className="font-medium">© {new Date().getFullYear()} Netrik Shop · Restaurant OS</span>
+          <div className="flex items-center gap-3">
+            <NetrikLogo variant="wordmark" className="h-7 w-auto" />
+            <span className="font-medium">© {new Date().getFullYear()}</span>
           </div>
           <div className="flex items-center gap-6 text-xs font-medium">
             <a href="#features" className="hover:text-emerald-700 transition">Features</a>
