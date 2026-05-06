@@ -102,12 +102,12 @@ export default function ChefDashboard() {
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[6.75rem] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {restaurant.logoUrl ? (
               <img src={restaurant.logoUrl} alt={restaurant.name} className="h-9 w-9 rounded-xl object-cover border border-neutral-200" />
             ) : (
-              <NetrikLogo className="h-9 w-9" />
+              <NetrikLogo className="h-[6.75rem] w-[6.75rem]" />
             )}
             <div className="min-w-0">
               <div className="font-bold tracking-tight truncate">{restaurant.name}</div>
