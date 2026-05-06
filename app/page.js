@@ -112,7 +112,7 @@ export default function Landing() {
       >
         <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <NetrikLogo variant="wordmark" className="h-8 md:h-9 w-auto max-w-[180px] md:max-w-[210px]" />
+            <NetrikLogo variant="primary" className="h-8 md:h-9 w-auto max-w-[180px] md:max-w-[210px]" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-9 text-[14px] font-medium text-neutral-600">
@@ -444,7 +444,7 @@ export default function Landing() {
       <footer className="border-t border-neutral-200/80 py-10 px-5 md:px-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-neutral-500">
           <div className="flex items-center gap-3">
-            <NetrikLogo variant="wordmark" className="h-7 md:h-8 w-auto max-w-[160px] md:max-w-[190px]" />
+            <NetrikLogo variant="primary" className="h-7 md:h-8 w-auto max-w-[160px] md:max-w-[190px]" />
             <span className="font-medium">© {new Date().getFullYear()}</span>
           </div>
           <div className="flex items-center gap-6 text-xs font-medium">

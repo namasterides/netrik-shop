@@ -249,7 +249,7 @@ export default function CentralAdmin() {
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
         <div className="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <NetrikLogo variant="wordmark" className="h-8 w-auto max-w-[190px]" />
+            <NetrikLogo variant="primary" className="h-8 w-auto max-w-[190px]" />
             <div className="min-w-0">
               <div className="font-bold tracking-tight">Central Admin</div>
             </div>

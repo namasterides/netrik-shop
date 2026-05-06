@@ -1,10 +1,9 @@
-const LOGO_MARK = '/brand/original/netrik-mark.png';
-const LOGO_WORDMARK = '/brand/original/netrik-wordmark.png';
+const LOGO_PRIMARY = '/brand/original/netrikshop%20update%20logo.png';
+const LOGO_LOGIN = '/brand/original/login%20logo.png';
 
-// Reusable Netrik Shop logo (mark or wordmark).
-export const NetrikLogo = ({ className = 'h-10 w-10', alt = 'Netrik Shop', variant = 'mark' }) => {
-  const src = variant === 'wordmark' ? LOGO_WORDMARK : LOGO_MARK;
+// Reusable Netrik Shop logo (primary or login-specific).
+export const NetrikLogo = ({ className = 'h-10 w-10', alt = 'Netrik Shop', variant = 'primary' }) => {
+  const src = variant === 'login' ? LOGO_LOGIN : LOGO_PRIMARY;
   return <img src={src} alt={alt} className={`${className} object-contain block`} />;
 };
-
 export default NetrikLogo;

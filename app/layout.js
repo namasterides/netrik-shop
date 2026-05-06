@@ -5,9 +5,9 @@ export const metadata = {
   title: 'Netrik Shop — Restaurant OS',
   description: 'Premium multi-tenant restaurant management platform with AI Waiter, QR ordering, kitchen ticketing & analytics.',
   icons: {
-    icon: '/brand/original/netrik-mark.png',
-    shortcut: '/brand/original/netrik-mark.png',
-    apple: '/brand/original/netrik-mark.png',
+    icon: '/brand/original/fav%20icon.png',
+    shortcut: '/brand/original/fav%20icon.png',
+    apple: '/brand/original/fav%20icon.png',
   },
 };
 
