@@ -352,7 +352,6 @@ export default function ManagerDashboard() {
         <img src="${brandLogoUrl}" alt="Netrik Shop" />
         <div>
           <h1>${restaurant?.name || 'Restaurant'} · ${title}</h1>
-          <div style="color:#6b7280;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Powered by Netrik</div>
         </div>
       </div>
       <p>Printed: ${new Date().toLocaleString()} · Rows: ${rows.length}</p>
@@ -408,7 +407,6 @@ export default function ManagerDashboard() {
         <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
       </table>
       <div class="total">Total: $${order.total.toFixed(2)}</div>
-      <div class="meta" style="margin-top:8px;">Powered by Netrik Shop</div>
     </body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -435,7 +433,6 @@ export default function ManagerDashboard() {
     w.document.write(`<html><head><title>Table ${t.number} QR</title><style>body{font-family:Inter,system-ui;text-align:center;padding:48px;color:#0a0a0a}h1{font-size:30px;margin:0;font-weight:700;letter-spacing:-.02em}</style></head><body>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px;">
         <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:42px;width:auto;" />
-        <div style="color:#525252;font-size:12px;letter-spacing:.2em;text-transform:uppercase">Powered by Netrik</div>
       </div>
       <h1>${restaurant?.name || ''}</h1>
       <h2 style="margin:24px 0 6px;font-weight:600">Table ${t.number}</h2>

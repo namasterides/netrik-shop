@@ -224,7 +224,6 @@ export default function CustomerOrder() {
         <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
       </table>
       <div class="total">Total: $${currentOrder.total.toFixed(2)}</div>
-      <div class="meta" style="margin-top:8px;">Powered by Netrik Shop</div>
     </body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);

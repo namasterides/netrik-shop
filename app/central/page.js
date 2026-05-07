@@ -230,8 +230,8 @@ export default function CentralAdmin() {
       <div class="brand">
         <img src="${brandLogoUrl}" alt="Netrik Shop" />
         <div>
-          <h1>Netrik Shop · Restaurants</h1>
-          <div style="color:#6b7280;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Central report</div>
+          <h1>Central Admin</h1>
+          <div style="color:#6b7280;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Restaurants Report</div>
         </div>
       </div>
       <p>Printed on ${new Date().toLocaleString()}</p>

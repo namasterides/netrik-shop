@@ -90,7 +90,7 @@ export default function ChefDashboard() {
     w.document.write(`<html><head><title>Ticket #${o.id.slice(0,6)}</title><style>body{font-family:'Inter',monospace;width:300px;padding:16px;color:#111}h2{margin:6px 0 0;font-size:18px}table{width:100%;border-collapse:collapse}td{vertical-align:top}.muted{color:#666;font-size:11px}img{height:28px;width:auto;display:block}</style></head><body>
       <img src="${brandLogoUrl}" alt="Netrik Shop" />
       <h2>${restaurant?.name||''}</h2>
-      <div class="muted">Kitchen ticket · Netrik Shop</div>
+      <div class="muted">Kitchen ticket</div>
       <hr style="border:none;border-top:1px solid #ddd;margin:12px 0"/>
       <div><b>Ticket #${o.id.slice(0,6).toUpperCase()}</b></div>
       <div>Table ${o.tableNumber} · Mesa ${o.tableNumber}</div>
