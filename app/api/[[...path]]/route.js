@@ -450,7 +450,7 @@ async function handleDemoRequest(path, method, request) {
     };
     db.restaurants.push(row);
 
-    // Create 2 default server accounts for the restaurant
+    // Create 4 default server accounts for the restaurant
     const server1 = {
       id: makeId('srv'),
       restaurant_id: restaurantId,
@@ -469,8 +469,26 @@ async function handleDemoRequest(path, method, request) {
       assigned_table_ids: [],
       created_at: ts,
     };
+    const server3 = {
+      id: makeId('srv'),
+      restaurant_id: restaurantId,
+      name: 'Server 3',
+      user_id: 'server3_' + s,
+      password: randPwd(),
+      assigned_table_ids: [],
+      created_at: ts,
+    };
+    const server4 = {
+      id: makeId('srv'),
+      restaurant_id: restaurantId,
+      name: 'Server 4',
+      user_id: 'server4_' + s,
+      password: randPwd(),
+      assigned_table_ids: [],
+      created_at: ts,
+    };
     if (!db.servers) db.servers = [];
-    db.servers.push(server1, server2);
+    db.servers.push(server1, server2, server3, server4);
 
     const restaurant = restaurantToApi(row);
     const onboardingData = {
@@ -478,10 +496,12 @@ async function handleDemoRequest(path, method, request) {
       serverCreds: [
         { name: server1.name, userId: server1.user_id, password: server1.password },
         { name: server2.name, userId: server2.user_id, password: server2.password },
+        { name: server3.name, userId: server3.user_id, password: server3.password },
+        { name: server4.name, userId: server4.user_id, password: server4.password },
       ],
     };
     sendRestaurantOnboardingEmail(onboardingData).catch(e => console.error('SMTP Background Error:', e));
-    return json({ restaurant, servers: [server1, server2], mailStatus: 'sent_to_background' });
+    return json({ restaurant, servers: [server1, server2, server3, server4], mailStatus: 'sent_to_background' });
   }
 
   const restMatch = path.match(/^restaurants\/([^\/]+)$/);
@@ -1040,10 +1060,12 @@ async function handler(request, { params }) {
       const { data, error } = await sb.from('restaurants').insert(row).select('*').single();
       if (error) return err(error.message, 500);
       
-      // Create 2 default server accounts for the restaurant
+      // Create 4 default server accounts for the restaurant
       const servers = [
         { restaurant_id: data.id, name: 'Server 1', user_id: 'server1_' + s, password: randPwd(), assigned_table_ids: [] },
         { restaurant_id: data.id, name: 'Server 2', user_id: 'server2_' + s, password: randPwd(), assigned_table_ids: [] },
+        { restaurant_id: data.id, name: 'Server 3', user_id: 'server3_' + s, password: randPwd(), assigned_table_ids: [] },
+        { restaurant_id: data.id, name: 'Server 4', user_id: 'server4_' + s, password: randPwd(), assigned_table_ids: [] },
       ];
       let serverData = null;
       try {
