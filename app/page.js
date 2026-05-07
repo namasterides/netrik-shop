@@ -110,9 +110,9 @@ export default function Landing() {
           scrolled ? 'bg-white/85 backdrop-blur-xl border-b border-neutral-200/80' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[7rem] md:h-[7.5rem] flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[5rem] md:h-[5.5rem] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <NetrikLogo variant="primary" className="h-[6.25rem] md:h-[6.75rem] w-auto max-w-[720px] md:max-w-[820px]" />
+            <NetrikLogo variant="primary" className="h-[4.75rem] md:h-[5.25rem] w-auto max-w-[900px] md:max-w-[1000px]" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-9 text-[14px] font-medium text-neutral-600">
@@ -157,7 +157,7 @@ export default function Landing() {
       </header>
 
       {/* ───────── HERO ───────── */}
-      <section className="relative pt-32 md:pt-40 pb-20 md:pb-28 px-5 md:px-8">
+      <section className="relative pt-28 md:pt-36 pb-20 md:pb-28 px-5 md:px-8">
         <div className="absolute inset-0 netrik-dot-bg opacity-40 pointer-events-none" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-emerald-100/40 blur-[120px] rounded-full pointer-events-none" />
 
