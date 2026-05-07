@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Lock, ChefHat, UserCog, ArrowLeft, UserCheck, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
 
 const STAFF_ROLES = [
   { id: 'manager', label: 'Manager', desc: 'Restaurant admin', icon: UserCog },
@@ -53,6 +54,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-white text-neutral-900 grid lg:grid-cols-2">
+      {loading && (
+        <div className="fixed inset-0 z-50 bg-white/70 backdrop-blur-sm grid place-items-center">
+          <div className="flex flex-col items-center gap-3 text-sm text-neutral-600">
+            <LoadingLogo className="h-12 w-12" alt="Signing in" />
+            <div>Signing in...</div>
+          </div>
+        </div>
+      )}
       {/* Left side — brand panel */}
       <div className="relative hidden lg:flex flex-col justify-between p-12 bg-emerald-900 text-white overflow-hidden">
         <div className="absolute inset-0 netrik-dot-bg opacity-10 pointer-events-none" />

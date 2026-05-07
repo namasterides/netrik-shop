@@ -45,6 +45,7 @@ import {
   Search,
 } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
 
 const SUBSCRIPTIONS = ['Starter', 'Pro', 'Premium', 'Enterprise'];
 const PLAN_PRICE = { Starter: 49, Pro: 99, Premium: 199, Enterprise: 499 };
@@ -357,7 +358,7 @@ export default function RestaurantDetail() {
     return (
       <div className="min-h-screen bg-neutral-50/40 grid place-items-center">
         <div className="flex flex-col items-center gap-4">
-          <NetrikLogo className="h-16 w-16 animate-pulse" />
+          <LoadingLogo className="h-16 w-16" alt="Loading restaurant" />
           <div className="text-sm text-neutral-500">Loading restaurant…</div>
         </div>
       </div>

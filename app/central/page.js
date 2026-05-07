@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
 
 const SUBSCRIPTIONS = ['Starter', 'Pro', 'Premium', 'Enterprise'];
 const PLAN_FILTERS = ['All', ...SUBSCRIPTIONS];
@@ -215,6 +216,11 @@ export default function CentralAdmin() {
   };
 
   const copy = (text) => { navigator.clipboard.writeText(text); toast.success('Copied'); };
+  const credsPending = Boolean(
+    showCredsFor
+    && !showCredsFor.managerCreds?.userId
+    && !showCredsFor.chefCreds?.userId
+  );
 
   const downloadRestaurantsCsv = () => {
     const rows = [['Restaurant', 'Owner', 'Email', 'Contact', 'Subscription', 'Domain', 'Created']];
@@ -625,10 +631,16 @@ export default function CentralAdmin() {
           </div>
 
           {!loaded ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-20 rounded-xl bg-neutral-100 animate-pulse" />
-              ))}
+            <div className="space-y-5">
+              <div className="flex flex-col items-center gap-3 text-sm text-neutral-500">
+                <LoadingLogo className="h-12 w-12" alt="Loading restaurants" />
+                <div>Loading restaurants...</div>
+              </div>
+              <div className="space-y-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-20 rounded-xl bg-neutral-100 animate-pulse" />
+                ))}
+              </div>
             </div>
           ) : list.length === 0 ? (
             <div className="border border-dashed border-neutral-200 rounded-2xl p-12 text-center">
@@ -732,6 +744,12 @@ export default function CentralAdmin() {
             </DialogHeader>
             {showCredsFor && (
               <div className="space-y-4">
+                {credsPending && (
+                  <div className="flex flex-col items-center gap-3 text-sm text-neutral-500">
+                    <LoadingLogo className="h-12 w-12" alt="Generating credentials" />
+                    <div>Generating credentials...</div>
+                  </div>
+                )}
                 <div className="rounded-xl border border-neutral-200 p-4 bg-neutral-50/40">
                   <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold mb-2">Manager</div>
                   <div className="space-y-2">
