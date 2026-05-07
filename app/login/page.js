@@ -108,7 +108,7 @@ export default function LoginPage() {
 
           {/* Mobile-only logo */}
           <div className="lg:hidden mt-5 flex items-center gap-2.5">
-            <NetrikLogo variant="login" className="h-28 w-auto max-w-[640px]" />
+            <NetrikLogo variant="primary" className="h-28 w-auto max-w-[680px]" />
           </div>
 
           <h1 className="mt-6 font-display text-3xl md:text-4xl font-bold tracking-tight">Sign in</h1>

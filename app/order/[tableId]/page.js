@@ -365,8 +365,8 @@ export default function CustomerOrder() {
     return (
       <div className="min-h-screen bg-white text-neutral-500 flex items-center justify-center text-sm">
         <div className="flex flex-col items-center gap-3">
-          <LoadingLogo className="h-12 w-12" alt="Connecting" />
-          <div>Connecting to your table…</div>
+          <LoadingLogo className="h-20 w-20" alt="Connecting" />
+          <div className="text-xs">Connecting…</div>
         </div>
       </div>
     );

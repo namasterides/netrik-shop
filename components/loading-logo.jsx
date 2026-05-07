@@ -3,8 +3,8 @@
 import { useState } from 'react';
 
 const LOGO_CANDIDATES = [
-  '/brand/original/lodiing%20logo.png',
   '/brand/original/loading%20logo.png',
+  '/brand/original/lodiing%20logo.png',
   '/brand/original/netrikshop%20update%20logo.png',
 ];
 
@@ -19,6 +19,8 @@ export default function LoadingLogo({ className = 'h-12 w-12', alt = 'Loading' }
         src={src}
         alt={alt}
         className="netrik-loading-logo"
+        loading="eager"
+        decoding="async"
         onError={() => setLogoIndex((prev) => (prev + 1 < LOGO_CANDIDATES.length ? prev + 1 : prev))}
       />
     </div>
