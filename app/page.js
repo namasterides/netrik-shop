@@ -18,8 +18,18 @@ import {
   Check,
   Menu as MenuIcon,
   X,
+  ShieldCheck,
+  UserCog,
+  UserCheck,
 } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
+
+const DASHBOARD_BY_TYPE = {
+  central: { href: '/central', label: 'Central panel', icon: ShieldCheck },
+  manager: { href: '/manager', label: 'Manager dashboard', icon: UserCog },
+  chef: { href: '/chef', label: 'Chef dashboard', icon: ChefHat },
+  server: { href: '/server', label: 'Server dashboard', icon: UserCheck },
+};
 
 const HERO_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80';
 
@@ -77,6 +87,33 @@ const FAQS = [
 export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('netrik_user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && DASHBOARD_BY_TYPE[parsed.type]) setUser(parsed);
+      }
+    } catch {}
+    setAuthChecked(true);
+
+    const onStorage = (e) => {
+      if (e.key !== 'netrik_user') return;
+      try {
+        const parsed = e.newValue ? JSON.parse(e.newValue) : null;
+        setUser(parsed && DASHBOARD_BY_TYPE[parsed.type] ? parsed : null);
+      } catch {
+        setUser(null);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const dash = user ? DASHBOARD_BY_TYPE[user.type] : null;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -123,11 +160,21 @@ export default function Landing() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Link href="/login" className="hidden md:block">
-              <Button className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm h-10 px-5 shadow-sm">
-                Sign in <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-              </Button>
-            </Link>
+            {authChecked && (
+              dash ? (
+                <Link href={dash.href} className="hidden md:block">
+                  <Button className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm h-10 px-5 shadow-sm">
+                    <dash.icon className="mr-1.5 h-3.5 w-3.5" /> {dash.label}
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/login" className="hidden md:block">
+                  <Button className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm h-10 px-5 shadow-sm">
+                    Sign in <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              )
+            )}
             <button
               onClick={() => setMobileNav((s) => !s)}
               className="md:hidden h-10 w-10 grid place-items-center rounded-full hover:bg-neutral-100"
@@ -146,11 +193,21 @@ export default function Landing() {
               <a onClick={() => setMobileNav(false)} href="#flow">How it works</a>
               <a onClick={() => setMobileNav(false)} href="#stories">Stories</a>
               <a onClick={() => setMobileNav(false)} href="#faq">FAQ</a>
-              <Link href="/login" className="block">
-                <Button className="w-full rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11">
-                  Sign in
-                </Button>
-              </Link>
+              {authChecked && (
+                dash ? (
+                  <Link href={dash.href} onClick={() => setMobileNav(false)} className="block">
+                    <Button className="w-full rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11">
+                      <dash.icon className="mr-1.5 h-4 w-4" /> {dash.label}
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/login" onClick={() => setMobileNav(false)} className="block">
+                    <Button className="w-full rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11">
+                      Sign in
+                    </Button>
+                  </Link>
+                )
+              )}
             </div>
           </div>
         )}
@@ -184,9 +241,9 @@ export default function Landing() {
           </p>
 
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3 reveal">
-            <Link href="/login">
+            <Link href={dash ? dash.href : '/login'}>
               <Button className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm h-12 px-7 shadow-lg shadow-emerald-700/15">
-                Open Dashboard <ArrowRight className="ml-1.5 h-4 w-4" />
+                {dash ? dash.label : 'Open Dashboard'} <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
             </Link>
             <a
@@ -424,9 +481,9 @@ export default function Landing() {
               for yourself.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/login">
+              <Link href={dash ? dash.href : '/login'}>
                 <Button className="rounded-full bg-white text-emerald-900 hover:bg-emerald-50 font-semibold h-12 px-7">
-                  Open Dashboard <ArrowRight className="ml-1.5 h-4 w-4" />
+                  {dash ? dash.label : 'Open Dashboard'} <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </Link>
               <a
@@ -451,7 +508,9 @@ export default function Landing() {
             <a href="#features" className="hover:text-emerald-700 transition">Features</a>
             <a href="#flow" className="hover:text-emerald-700 transition">Flow</a>
             <a href="#stories" className="hover:text-emerald-700 transition">Stories</a>
-            <Link href="/login" className="hover:text-emerald-700 transition">Sign in</Link>
+            <Link href={dash ? dash.href : '/login'} className="hover:text-emerald-700 transition">
+              {dash ? dash.label : 'Sign in'}
+            </Link>
           </div>
         </div>
       </footer>
