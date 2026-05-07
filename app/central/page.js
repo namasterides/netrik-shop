@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +17,6 @@ import {
   Users,
   DollarSign,
   Activity,
-  QrCode,
   Pencil,
   Trash2,
   Copy,
@@ -26,13 +26,60 @@ import {
   Upload,
   MessageSquare,
   Send,
+  Search,
+  Filter,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ExternalLink,
+  Mail,
+  Phone,
+  Globe,
+  Sparkles,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
 
 const SUBSCRIPTIONS = ['Starter', 'Pro', 'Premium', 'Enterprise'];
+const PLAN_FILTERS = ['All', ...SUBSCRIPTIONS];
 const COLORS = ['#047857', '#10b981', '#34d399', '#a7f3d0'];
 const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
+
+const PLAN_STYLE = {
+  Starter: 'bg-slate-100 text-slate-700 border-slate-200',
+  Pro: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  Premium: 'bg-violet-50 text-violet-800 border-violet-200',
+  Enterprise: 'bg-amber-50 text-amber-800 border-amber-200',
+};
+
+function MaskedField({ value }) {
+  const [reveal, setReveal] = useState(false);
+  if (!value) return <span className="text-neutral-400 text-sm">—</span>;
+  return (
+    <div className="flex items-center gap-2">
+      <code className="font-mono text-[13px] text-neutral-900 bg-neutral-100 px-2 py-1 rounded-md border border-neutral-200 flex-1 truncate">
+        {reveal ? value : '•'.repeat(Math.max(8, Math.min(value.length, 12)))}
+      </code>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setReveal((r) => !r)}
+        className="h-7 w-7 p-0 text-neutral-500 hover:text-neutral-900"
+      >
+        {reveal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => { navigator.clipboard.writeText(value); toast.success('Copied'); }}
+        className="h-7 w-7 p-0 text-neutral-500 hover:text-emerald-700"
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
 
 export default function CentralAdmin() {
   const router = useRouter();
@@ -42,12 +89,13 @@ export default function CentralAdmin() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [showCredsFor, setShowCredsFor] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deletePassword, setDeletePassword] = useState('');
   const [supportMessages, setSupportMessages] = useState([]);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [replyOpen, setReplyOpen] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [search, setSearch] = useState('');
+  const [planFilter, setPlanFilter] = useState('All');
+  const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState({
     name: '',
     ownerName: '',
@@ -73,7 +121,7 @@ export default function CentralAdmin() {
           .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refresh(true))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => refresh(true))
           .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, (payload) => {
-            setSupportMessages(prev => [...prev, payload.new].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+            setSupportMessages((prev) => [...prev, payload.new].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
           })
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'support_messages' }, () => refresh(true))
           .subscribe();
@@ -97,6 +145,8 @@ export default function CentralAdmin() {
       setSupportMessages(msgData.messages || []);
     } catch (e) {
       if (!silent) toast.error('Failed to refresh central data');
+    } finally {
+      setLoaded(true);
     }
   };
 
@@ -110,9 +160,9 @@ export default function CentralAdmin() {
     if (editing) {
       toast.success('Restaurant updated');
     } else if (data.mailStatus === 'sent_to_background') {
-      toast.success('Restaurant created and credentials email sent');
+      toast.success('Restaurant created — credentials emailed in background');
     } else {
-      toast.warning('Restaurant created, but email was not sent. Check SMTP settings.');
+      toast.warning('Created, but email failed. Check SMTP settings.');
     }
     if (!editing && data.restaurant) setShowCredsFor(data.restaurant);
     setOpen(false);
@@ -136,21 +186,6 @@ export default function CentralAdmin() {
     setOpen(true);
   };
 
-  const remove = async () => {
-    if (!deleteTarget) return;
-    const res = await fetch(`/api/restaurants/${deleteTarget.id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deletePassword }),
-    });
-    const data = await res.json();
-    if (!res.ok) return toast.error(data.error || 'Failed to delete restaurant');
-    toast.success('Restaurant deleted');
-    setDeleteTarget(null);
-    setDeletePassword('');
-    refresh();
-  };
-
   const sendSupportReply = async () => {
     if (!replyText || !replyOpen) return;
     const res = await fetch('/api/support', {
@@ -168,17 +203,11 @@ export default function CentralAdmin() {
   const handleLogoUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
-    }
-    if (file.size > 1024 * 1024) {
-      toast.error('Logo file size must be less than 1MB');
-      return;
-    }
+    if (!file.type.startsWith('image/')) return toast.error('Please select an image file');
+    if (file.size > 1024 * 1024) return toast.error('Logo must be under 1MB');
     const reader = new FileReader();
     reader.onload = () => {
-      setForm((previous) => ({ ...previous, logoUrl: String(reader.result || '') }));
+      setForm((p) => ({ ...p, logoUrl: String(reader.result || '') }));
       toast.success('Logo loaded');
     };
     reader.onerror = () => toast.error('Could not read file');
@@ -188,10 +217,9 @@ export default function CentralAdmin() {
   const copy = (text) => { navigator.clipboard.writeText(text); toast.success('Copied'); };
 
   const downloadRestaurantsCsv = () => {
-    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
-    const rows = [['Netrik Logo', 'Restaurant', 'Owner', 'Email', 'Contact', 'Subscription', 'Domain', 'Created']];
+    const rows = [['Restaurant', 'Owner', 'Email', 'Contact', 'Subscription', 'Domain', 'Created']];
     list.forEach((r) => {
-      rows.push([brandLogoUrl, r.name, r.ownerName, r.email || '', r.contact, r.subscription, r.domain || '', new Date(r.createdAt).toLocaleDateString()]);
+      rows.push([r.name, r.ownerName, r.email || '', r.contact, r.subscription, r.domain || '', new Date(r.createdAt).toLocaleDateString()]);
     });
     const csv = rows.map((row) => row.map((col) => `"${String(col).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -244,26 +272,47 @@ export default function CentralAdmin() {
     w.document.close();
   };
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return list.filter((r) => {
+      if (planFilter !== 'All' && r.subscription !== planFilter) return false;
+      if (!q) return true;
+      return (
+        r.name?.toLowerCase().includes(q)
+        || r.ownerName?.toLowerCase().includes(q)
+        || r.email?.toLowerCase().includes(q)
+        || r.contact?.toLowerCase().includes(q)
+        || r.domain?.toLowerCase().includes(q)
+      );
+    });
+  }, [list, search, planFilter]);
+
   if (!me) return null;
 
   const unread = supportMessages.filter((m) => m.sender === 'restaurant' && !m.read).length;
 
   const KPI = [
-    { i: Building2, t: 'Restaurants', v: stats.totalRestaurants, sub: 'active tenants' },
-    { i: DollarSign, t: 'Total Revenue', v: `$${(stats.totalRevenue || 0).toLocaleString()}`, sub: 'across all tenants' },
-    { i: Activity, t: 'Orders Served', v: (stats.totalOrders || 0).toLocaleString(), sub: 'all-time' },
-    { i: Users, t: 'MRR', v: `$${(stats.mrr || 0).toLocaleString()}`, sub: 'monthly recurring' },
+    { i: Building2, t: 'Restaurants', v: stats.totalRestaurants, sub: 'active tenants', tone: 'emerald' },
+    { i: DollarSign, t: 'Total revenue', v: `$${(stats.totalRevenue || 0).toLocaleString()}`, sub: 'lifetime, paid orders', tone: 'amber' },
+    { i: Activity, t: 'Orders served', v: (stats.totalOrders || 0).toLocaleString(), sub: 'all-time', tone: 'blue' },
+    { i: Users, t: 'MRR', v: `$${(stats.mrr || 0).toLocaleString()}`, sub: 'monthly recurring', tone: 'violet' },
   ];
+
+  const toneMap = {
+    emerald: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+    blue: 'bg-blue-50 text-blue-700',
+    violet: 'bg-violet-50 text-violet-700',
+  };
 
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
         <div className="max-w-7xl mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <NetrikLogo variant="primary" className="h-[3.01rem] w-auto max-w-[480px]" />
-            <div className="min-w-0">
-              <div className="font-bold tracking-tight">Central Admin</div>
-            </div>
+            <NetrikLogo variant="primary" className="h-10 w-auto max-w-[180px]" />
+            <span className="h-5 w-px bg-neutral-200" />
+            <div className="font-bold tracking-tight text-sm">Central Admin</div>
           </div>
           <div className="flex items-center gap-2">
             <Dialog open={inboxOpen} onOpenChange={setInboxOpen}>
@@ -323,9 +372,7 @@ export default function CentralAdmin() {
                   <div className="p-4 border-t border-neutral-200 shrink-0 bg-white">
                     <div className="text-xs text-emerald-800 mb-2 flex justify-between items-center font-semibold">
                       <span>Replying to {replyOpen.name}</span>
-                      <button onClick={() => setReplyOpen(null)} className="text-neutral-500 hover:text-neutral-800">
-                        Cancel
-                      </button>
+                      <button onClick={() => setReplyOpen(null)} className="text-neutral-500 hover:text-neutral-800">Cancel</button>
                     </div>
                     <div className="flex gap-2">
                       <Input
@@ -371,10 +418,12 @@ export default function CentralAdmin() {
           {KPI.map((c) => (
             <div key={c.t} className="rounded-2xl bg-white border border-neutral-200/80 p-5">
               <div className="flex items-center justify-between">
-                <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center">
+                <div className={`h-10 w-10 rounded-xl grid place-items-center ${toneMap[c.tone]}`}>
                   <c.i className="h-4.5 w-4.5" />
                 </div>
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">live</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700 flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> live
+                </span>
               </div>
               <div className="mt-4 text-2xl md:text-3xl font-extrabold tabular-nums tracking-tight">{c.v}</div>
               <div className="text-[11px] uppercase tracking-widest text-neutral-500 font-medium mt-1">{c.t}</div>
@@ -410,50 +459,69 @@ export default function CentralAdmin() {
           <div className="rounded-2xl bg-white border border-neutral-200/80 p-5 md:p-6">
             <div className="font-display font-bold text-lg tracking-tight mb-1">Subscription mix</div>
             <div className="text-xs text-neutral-500 mb-3">By active plan</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={stats.byPlan || []} dataKey="value" nameKey="name" innerRadius={50} outerRadius={88} paddingAngle={3}>
-                  {(stats.byPlan || []).map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12 }}
-                  itemStyle={{ color: '#0a0a0a', fontSize: 12 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-wrap gap-3 text-xs mt-2">
-              {(stats.byPlan || []).map((p, i) => (
-                <div key={p.name} className="flex items-center gap-1.5 text-neutral-600">
-                  <span className="h-2 w-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                  {p.name} ({p.value})
+            {(stats.byPlan || []).length === 0 ? (
+              <div className="h-[220px] grid place-items-center text-neutral-400 text-sm">No tenants yet</div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={stats.byPlan || []} dataKey="value" nameKey="name" innerRadius={50} outerRadius={88} paddingAngle={3}>
+                      {(stats.byPlan || []).map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12 }}
+                      itemStyle={{ color: '#0a0a0a', fontSize: 12 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap gap-3 text-xs mt-2">
+                  {(stats.byPlan || []).map((p, i) => (
+                    <div key={p.name} className="flex items-center gap-1.5 text-neutral-600">
+                      <span className="h-2 w-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                      {p.name} ({p.value})
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         </div>
 
         {/* Restaurants list */}
         <div className="rounded-2xl bg-white border border-neutral-200/80 p-5 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
             <div>
               <div className="font-display font-bold text-lg tracking-tight">Restaurants</div>
-              <div className="text-xs text-neutral-500">{list.length} tenant{list.length === 1 ? '' : 's'}</div>
+              <div className="text-xs text-neutral-500">
+                {filtered.length} of {list.length} tenant{list.length === 1 ? '' : 's'}
+                {planFilter !== 'All' || search ? ' · filtered' : ''}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50"
-                onClick={downloadRestaurantsCsv}
-              >
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, owner, email…"
+                  className="pl-9 h-9 w-64 max-w-full bg-white border-neutral-200"
+                />
+              </div>
+              <div className="relative">
+                <Filter className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none z-10" />
+                <Select value={planFilter} onValueChange={setPlanFilter}>
+                  <SelectTrigger className="h-9 w-36 pl-8 bg-white border-neutral-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    {PLAN_FILTERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button size="sm" variant="outline" className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50" onClick={downloadRestaurantsCsv}>
                 <Download className="h-4 w-4 mr-1.5" />CSV
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50"
-                onClick={printRestaurants}
-              >
+              <Button size="sm" variant="outline" className="rounded-full h-9 border-neutral-200 hover:bg-neutral-50" onClick={printRestaurants}>
                 <Printer className="h-4 w-4 mr-1.5" />Print
               </Button>
               <Dialog open={open} onOpenChange={setOpen}>
@@ -540,8 +608,9 @@ export default function CentralAdmin() {
                       </Select>
                     </div>
                     {!editing && (
-                      <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-                        On creation, credentials and subscription details will be emailed to this restaurant address.
+                      <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-start gap-2">
+                        <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>On creation, manager, chef and 4 server credentials are auto-generated and emailed to this address.</span>
                       </div>
                     )}
                   </div>
@@ -555,157 +624,151 @@ export default function CentralAdmin() {
             </div>
           </div>
 
-          <div className="overflow-x-auto -mx-5 md:-mx-6 px-5 md:px-6">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-neutral-500 text-[10px] uppercase tracking-widest font-semibold">
-                  <th className="text-left py-3 px-2 font-semibold">Restaurant</th>
-                  <th className="text-left py-3 px-2 font-semibold">Owner</th>
-                  <th className="text-left py-3 px-2 font-semibold">Email</th>
-                  <th className="text-left py-3 px-2 font-semibold">Plan</th>
-                  <th className="text-left py-3 px-2 font-semibold">Domain</th>
-                  <th className="text-left py-3 px-2 font-semibold">Created</th>
-                  <th className="text-right py-3 px-2 font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {list.length === 0 && (
-                  <tr><td colSpan={7} className="py-12 text-center text-neutral-400">No restaurants yet — add your first to get started.</td></tr>
-                )}
-                {list.map((r) => (
-                  <tr key={r.id} className="hover:bg-neutral-50/60">
-                    <td className="py-3 px-2">
-                      <div className="flex items-center gap-2.5">
-                        {r.logoUrl ? (
-                          <img src={r.logoUrl} alt={r.name} className="h-9 w-9 rounded-lg border border-neutral-200 object-cover" />
-                        ) : (
-                          <NetrikLogo className="h-[6.75rem] w-[6.75rem]" />
-                        )}
-                        <div>
-                          <div className="font-semibold text-neutral-900">{r.name}</div>
+          {!loaded ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-20 rounded-xl bg-neutral-100 animate-pulse" />
+              ))}
+            </div>
+          ) : list.length === 0 ? (
+            <div className="border border-dashed border-neutral-200 rounded-2xl p-12 text-center">
+              <div className="h-14 w-14 rounded-2xl bg-emerald-50 grid place-items-center text-emerald-700 mx-auto mb-3">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div className="font-display font-bold text-lg">No restaurants yet</div>
+              <div className="text-sm text-neutral-500 mt-1 mb-4">Add your first tenant to get started.</div>
+              <Button
+                size="sm"
+                onClick={() => setOpen(true)}
+                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-4"
+              >
+                <Plus className="h-4 w-4 mr-1.5" />Add restaurant
+              </Button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center text-neutral-400 text-sm">
+              No restaurants match your filters.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {filtered.map((r) => {
+                const planTone = PLAN_STYLE[r.subscription] || PLAN_STYLE.Pro;
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => router.push(`/central/${r.id}`)}
+                    className="group cursor-pointer rounded-2xl border border-neutral-200 bg-white p-4 hover:border-emerald-300 hover:shadow-sm transition flex items-start gap-4"
+                  >
+                    <div className="shrink-0">
+                      {r.logoUrl ? (
+                        <img src={r.logoUrl} alt={r.name} className="h-14 w-14 rounded-xl border border-neutral-200 object-cover" />
+                      ) : (
+                        <div className="h-14 w-14 rounded-xl border border-neutral-200 bg-emerald-50 grid place-items-center text-emerald-700">
+                          <Building2 className="h-6 w-6" />
                         </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <div className="font-semibold text-neutral-900 truncate">{r.name}</div>
+                        <Badge className={`rounded-full font-semibold border text-[10px] ${planTone}`}>
+                          {r.subscription}
+                        </Badge>
                       </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="text-neutral-800">{r.ownerName}</div>
-                      <div className="text-xs text-neutral-400">{r.contact}</div>
-                    </td>
-                    <td className="py-3 px-2 text-neutral-600 text-xs">{r.email || '—'}</td>
-                    <td className="py-3 px-2">
-                      <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 rounded-full font-semibold">
-                        {r.subscription}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-2 font-mono text-xs text-neutral-500">{r.domain || '—'}</td>
-                    <td className="py-3 px-2 text-xs text-neutral-500">{new Date(r.createdAt).toLocaleDateString()}</td>
-                    <td className="py-3 px-2 text-right whitespace-nowrap">
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => setShowCredsFor(r)}>
-                        <QrCode className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => startEdit(r)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => setDeleteTarget(r)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <div className="text-xs text-neutral-600 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="flex items-center gap-1"><Users className="h-3 w-3 text-neutral-400" /> {r.ownerName}</span>
+                        <span className="flex items-center gap-1"><Phone className="h-3 w-3 text-neutral-400" /> {r.contact}</span>
+                        {r.email && <span className="flex items-center gap-1 truncate"><Mail className="h-3 w-3 text-neutral-400" /> <span className="truncate">{r.email}</span></span>}
+                      </div>
+                      <div className="text-[11px] text-neutral-400 mt-1.5 flex flex-wrap items-center gap-x-3">
+                        {r.domain && <span className="flex items-center gap-1 font-mono"><Globe className="h-3 w-3" /> {r.domain}</span>}
+                        <span>Joined {new Date(r.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <ChevronRight className="h-5 w-5 text-neutral-300 group-hover:text-emerald-700 transition" />
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Quick credentials"
+                          className="h-8 px-2 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs font-semibold"
+                          onClick={() => setShowCredsFor(r)}
+                        >
+                          <KeyRound className="h-3.5 w-3.5 mr-1" /> Creds
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Edit"
+                          className="h-8 w-8 p-0 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => startEdit(r)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Link
+                          href={`/central/${r.id}`}
+                          className="inline-flex items-center justify-center h-8 px-3 rounded-md text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800"
+                        >
+                          View <ExternalLink className="h-3 w-3 ml-1" />
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Credentials & QR Modal */}
+        {/* Quick credentials modal — kept for one-click access from the list */}
         <Dialog open={!!showCredsFor} onOpenChange={(v) => !v && setShowCredsFor(null)}>
           <DialogContent className="bg-white max-w-lg">
             <DialogHeader>
-              <DialogTitle className="font-display tracking-tight">
+              <DialogTitle className="font-display tracking-tight flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-emerald-700" />
                 Credentials — {showCredsFor?.name}
               </DialogTitle>
             </DialogHeader>
             {showCredsFor && (
               <div className="space-y-4">
                 <div className="rounded-xl border border-neutral-200 p-4 bg-neutral-50/40">
-                  <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold mb-2">
-                    Manager Login
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm">{showCredsFor.managerCreds?.userId}</span>
-                    <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.managerCreds?.userId)} className="h-7 w-7 p-0">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm">{showCredsFor.managerCreds?.password}</span>
-                    <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.managerCreds?.password)} className="h-7 w-7 p-0">
-                      <Copy className="h-3 w-3" />
-                    </Button>
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold mb-2">Manager</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold w-20 shrink-0">User ID</span>
+                      <code className="font-mono text-[13px] flex-1 bg-white px-2.5 py-1 rounded-md border border-neutral-200">{showCredsFor.managerCreds?.userId}</code>
+                      <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.managerCreds?.userId)} className="h-7 w-7 p-0"><Copy className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold w-20 shrink-0">Password</span>
+                      <div className="flex-1"><MaskedField value={showCredsFor.managerCreds?.password} /></div>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-xl border border-neutral-200 p-4 bg-neutral-50/40">
-                  <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold mb-2">
-                    Chef Login
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm">{showCredsFor.chefCreds?.userId}</span>
-                    <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.chefCreds?.userId)} className="h-7 w-7 p-0">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm">{showCredsFor.chefCreds?.password}</span>
-                    <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.chefCreds?.password)} className="h-7 w-7 p-0">
-                      <Copy className="h-3 w-3" />
-                    </Button>
+                  <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold mb-2">Chef</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold w-20 shrink-0">User ID</span>
+                      <code className="font-mono text-[13px] flex-1 bg-white px-2.5 py-1 rounded-md border border-neutral-200">{showCredsFor.chefCreds?.userId}</code>
+                      <Button size="sm" variant="ghost" onClick={() => copy(showCredsFor.chefCreds?.userId)} className="h-7 w-7 p-0"><Copy className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold w-20 shrink-0">Password</span>
+                      <div className="flex-1"><MaskedField value={showCredsFor.chefCreds?.password} /></div>
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-xl border border-neutral-200 p-4 bg-neutral-50/40 text-center">
-                  <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold mb-2">
-                    Tenant QR
-                  </div>
-                  <img
-                    alt="qr"
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(JSON.stringify({ tenant: showCredsFor.id, name: showCredsFor.name, domain: showCredsFor.domain }))}`}
-                    className="mx-auto rounded-lg"
-                  />
-                  <div className="text-xs text-neutral-500 mt-2">
-                    Onboarding email target: {showCredsFor.email || 'not provided'}
-                  </div>
-                </div>
+                <Link
+                  href={`/central/${showCredsFor.id}`}
+                  className="block text-center text-xs text-emerald-700 hover:text-emerald-800 font-semibold underline-offset-2 hover:underline"
+                  onClick={() => setShowCredsFor(null)}
+                >
+                  Open full tenant view for server (waiter) accounts and more →
+                </Link>
               </div>
             )}
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
-          <DialogContent className="bg-white max-w-md">
-            <DialogHeader>
-              <DialogTitle className="font-display tracking-tight">Delete restaurant</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <p className="text-sm text-neutral-600 leading-relaxed">
-                This action will permanently remove <span className="font-semibold text-neutral-900">{deleteTarget?.name}</span>, including menus, tables, orders and chat history.
-              </p>
-              <div>
-                <Label className="text-xs font-semibold">Enter delete password</Label>
-                <Input
-                  type="password"
-                  value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
-                  className="mt-1.5 bg-white border-neutral-200"
-                  placeholder="Type password"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" className="rounded-full border-neutral-200" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </Button>
-              <Button className="bg-rose-600 hover:bg-rose-700 text-white rounded-full" onClick={remove}>
-                Delete
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </main>

@@ -1117,6 +1117,87 @@ async function handler(request, { params }) {
       }
     }
 
+    // Per-restaurant aggregate endpoints used by the central admin detail page
+    const restServersMatch = path.match(/^restaurants\/([^\/]+)\/servers$/);
+    if (restServersMatch && method === 'GET') {
+      const id = restServersMatch[1];
+      const { data, error } = await sb.from('servers').select('*').eq('restaurant_id', id).order('name', { ascending: true });
+      if (error) return json({ servers: [], warning: error.message });
+      const servers = (data || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        userId: s.user_id,
+        password: s.password,
+        assignedTableIds: s.assigned_table_ids || [],
+        createdAt: s.created_at,
+      }));
+      return json({ servers });
+    }
+    const restFeedbackMatch = path.match(/^restaurants\/([^\/]+)\/feedback$/);
+    if (restFeedbackMatch && method === 'GET') {
+      const id = restFeedbackMatch[1];
+      const { data, error } = await sb.from('feedback').select('*').eq('restaurant_id', id).order('created_at', { ascending: false }).limit(100);
+      if (error) return json({ feedback: [], warning: error.message });
+      const feedback = (data || []).map((f) => ({
+        id: f.id,
+        restaurantId: f.restaurant_id,
+        tableId: f.table_id,
+        orderId: f.order_id,
+        rating: f.rating,
+        comment: f.comment || '',
+        createdAt: f.created_at,
+      }));
+      return json({ feedback });
+    }
+    const restSummaryMatch = path.match(/^restaurants\/([^\/]+)\/summary$/);
+    if (restSummaryMatch && method === 'GET') {
+      const id = restSummaryMatch[1];
+      const [restRes, ordersRes, tablesRes, menuRes, serversRes, feedbackRes] = await Promise.all([
+        sb.from('restaurants').select('*').eq('id', id).maybeSingle(),
+        sb.from('orders').select('*').eq('restaurant_id', id),
+        sb.from('rest_tables').select('*').eq('restaurant_id', id),
+        sb.from('menu').select('id,available').eq('restaurant_id', id),
+        sb.from('servers').select('id').eq('restaurant_id', id),
+        sb.from('feedback').select('rating').eq('restaurant_id', id),
+      ]);
+      if (restRes.error) return err(restRes.error.message, 500);
+      if (!restRes.data) return err('Not found', 404);
+      const allOrders = ordersRes.data || [];
+      const tables = tablesRes.data || [];
+      const menu = menuRes.data || [];
+      const servers = serversRes.data || [];
+      const feedback = feedbackRes.data || [];
+      const live = allOrders.filter((o) => o.status !== 'cancelled');
+      const paid = live.filter((o) => o.status === 'paid' || o.payment_status === 'paid');
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const todays = live.filter((o) => new Date(o.created_at) >= today);
+      const lifetimeRevenue = paid.reduce((s, o) => s + parseFloat(o.total || 0), 0);
+      const todayRevenue = todays.reduce((s, o) => s + parseFloat(o.total || 0), 0);
+      const activeOrders = live.filter((o) => ['pending', 'preparing', 'ready', 'served'].includes(o.status)).length;
+      const occupiedTables = tables.filter((t) => t.status === 'occupied').length;
+      const avgRating = feedback.length ? feedback.reduce((s, f) => s + (parseInt(f.rating) || 0), 0) / feedback.length : 0;
+      const lastActivity = live.length ? live.map((o) => new Date(o.created_at).getTime()).reduce((a, b) => Math.max(a, b), 0) : null;
+      return json({
+        restaurant: restaurantToApi(restRes.data),
+        summary: {
+          lifetimeRevenue,
+          todayRevenue,
+          totalOrders: live.length,
+          paidOrders: paid.length,
+          todayOrders: todays.length,
+          activeOrders,
+          tableCount: tables.length,
+          occupiedTables,
+          menuCount: menu.length,
+          menuAvailable: menu.filter((m) => m.available).length,
+          serverCount: servers.length,
+          feedbackCount: feedback.length,
+          avgRating: Math.round(avgRating * 10) / 10,
+          lastActivity: lastActivity ? new Date(lastActivity).toISOString() : null,
+        },
+      });
+    }
+
     // ============ MENU ============
     if (path === 'menu' && method === 'GET') {
       const url = new URL(request.url);
