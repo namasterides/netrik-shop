@@ -110,9 +110,9 @@ export default function Landing() {
           scrolled ? 'bg-white/85 backdrop-blur-xl border-b border-neutral-200/80' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[4.5rem] md:h-[5rem] flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-14 md:h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <NetrikLogo variant="primary" className="h-[4rem] md:h-[4.5rem] w-auto max-w-[520px] md:max-w-[600px]" />
+            <NetrikLogo variant="primary" className="h-12 w-auto max-w-[420px] md:max-w-[480px]" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-9 text-[14px] font-medium text-neutral-600">
@@ -157,7 +157,7 @@ export default function Landing() {
       </header>
 
       {/* ───────── HERO ───────── */}
-      <section className="relative pt-24 md:pt-32 pb-20 md:pb-28 px-5 md:px-8">
+      <section className="relative pt-20 md:pt-28 pb-20 md:pb-28 px-5 md:px-8">
         <div className="absolute inset-0 netrik-dot-bg opacity-40 pointer-events-none" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-emerald-100/40 blur-[120px] rounded-full pointer-events-none" />
 
@@ -444,7 +444,7 @@ export default function Landing() {
       <footer className="border-t border-neutral-200/80 py-10 px-5 md:px-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-neutral-500">
           <div className="flex items-center gap-3">
-            <NetrikLogo variant="primary" className="h-[4rem] md:h-[4.5rem] w-auto max-w-[480px] md:max-w-[560px]" />
+            <NetrikLogo variant="primary" className="h-12 w-auto max-w-[420px] md:max-w-[480px]" />
             <span className="font-medium">© {new Date().getFullYear()}</span>
           </div>
           <div className="flex items-center gap-6 text-xs font-medium">
