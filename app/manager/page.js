@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   Flame,
   FileText,
+  Star,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
@@ -132,6 +133,7 @@ export default function ManagerDashboard() {
   const [menu, setMenu] = useState([]);
   const [tables, setTables] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [feedbacks, setFeedbacks] = useState([]);
   const [analytics, setAnalytics] = useState({ todayRevenue: 0, todayOrders: 0, avgTicket: 0, topItems: [], byHour: [], last7: [] });
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -207,13 +209,14 @@ export default function ManagerDashboard() {
 
   const loadAll = async (u, silent = false) => {
     if (!u) return;
-    const [r, m, t, o, a, sm] = await Promise.all([
+    const [r, m, t, o, a, sm, fb] = await Promise.all([
       fetch(`/api/restaurants/${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/menu?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/tables?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/orders?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/analytics?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/support?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/restaurants/${u.restaurantId}/feedback`, { cache: 'no-store' }).then((r) => r.json()),
     ]);
     setRestaurant(r.restaurant);
     setMenu(m.menu || []);
@@ -221,6 +224,7 @@ export default function ManagerDashboard() {
     setOrders(o.orders || []);
     setAnalytics(a || {});
     setSupportMessages(sm.messages || []);
+    setFeedbacks(fb.feedback || []);
   };
 
   const saveItem = async () => {
@@ -464,6 +468,7 @@ export default function ManagerDashboard() {
     { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
     { id: 'tables', label: 'Tables', icon: Table2 },
     { id: 'kitchen', label: 'Kitchen', icon: ChefHat },
+    { id: 'feedback', label: 'Feedback', icon: Star },
   ];
 
   return (
@@ -1118,6 +1123,46 @@ export default function ManagerDashboard() {
                       </Button>
                     )}
                   </div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+
+          {/* Feedback */}
+          <TabsContent value="feedback" className="space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-neutral-600">
+                <span className="font-semibold text-neutral-900">{feedbacks.length}</span> reviews
+              </div>
+            </div>
+            <div className="grid lg:grid-cols-2 gap-4">
+              {feedbacks.length === 0 && (
+                <div className="lg:col-span-2 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  No feedback yet.
+                </div>
+              )}
+              {feedbacks.map((f) => (
+                <div key={f.id} className="rounded-2xl bg-white border border-neutral-200/80 p-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Star key={n} className={`h-4 w-4 ${n <= (f.rating || 0) ? 'text-emerald-500 fill-emerald-500' : 'text-neutral-200'}`} />
+                      ))}
+                    </div>
+                    <div className="text-xs text-neutral-400 font-mono">
+                      {new Date(f.created_at || f.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  {f.comment && (
+                    <div className="mt-3 text-sm text-neutral-700 bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                      &quot;{f.comment}&quot;
+                    </div>
+                  )}
+                  {f.order_id && (
+                    <div className="mt-3 text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">
+                      Order #{f.order_id.slice(0, 8)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -146,5 +146,34 @@ WHERE table_name = 'orders'
 SELECT COUNT(*) as server_count FROM servers;
 
 -- ============================================
+-- 6. CREATE FEEDBACK TABLE
+-- This table stores customer feedback ratings and comments
+-- ============================================
+CREATE TABLE IF NOT EXISTS feedback (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  table_id TEXT,
+  order_id TEXT,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_feedback_restaurant_id ON feedback(restaurant_id);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policy: Allow read for authenticated users
+CREATE POLICY "Allow read access to feedback" ON feedback
+  FOR SELECT USING (true);
+
+-- RLS Policy: Allow insert for service role
+CREATE POLICY "Allow insert for service role on feedback" ON feedback
+  FOR INSERT WITH CHECK (true);
+
+-- ============================================
 -- DONE! Your Supabase database is now ready
 -- ============================================

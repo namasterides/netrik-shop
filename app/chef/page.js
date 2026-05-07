@@ -84,7 +84,7 @@ export default function ChefDashboard() {
     const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     const lines = o.items.map((i) => {
       const isAdditional = i.isAdditional || false;
-      const additionalMark = isAdditional ? '<span style="color:#047857;font-weight:bold;font-size:11px">[ADDITIONAL]</span>' : '';
+      const additionalMark = isAdditional ? '<span style="color:#047857;font-weight:bold;font-size:11px">[ADDED ITEM]</span>' : '';
       return `<tr><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.qty}×</b></td><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.name}</b> ${additionalMark}<br/><span style='color:#666;font-size:11px'>${i.nameEs||''}</span>${i.notes?`<div style='font-size:11px;color:#444'>Note: ${i.notes}</div>`:''}</td></tr>`;
     }).join('');
     w.document.write(`<html><head><title>Ticket #${o.id.slice(0,6)}</title><style>body{font-family:'Inter',monospace;width:300px;padding:16px;color:#111}h2{margin:6px 0 0;font-size:18px}table{width:100%;border-collapse:collapse}td{vertical-align:top}.muted{color:#666;font-size:11px}img{height:28px;width:auto;display:block}</style></head><body>
