@@ -5,10 +5,10 @@ import { nluRespond } from '@/lib/nlu';
 import { sendRestaurantOnboardingEmail } from '@/lib/mailer';
 
 // Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
-async function aiWaiterReply({ message, menu, cart, allergy, spicy, notes, stage, restaurantName, history, language }) {
+async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language }) {
   try {
     const ai = await geminiWaiterChat({
-      context: { restaurantName, menu, cart, allergy, spicy, notes, stage, language },
+      context: { restaurantName, menu, cart, allergy, preference, avoid, notes, stage, language },
       history,
       userMessage: message,
     });
@@ -16,7 +16,7 @@ async function aiWaiterReply({ message, menu, cart, allergy, spicy, notes, stage
   } catch (e) {
     console.error('Gemini waiter failed, using NLU fallback:', e?.message || e);
   }
-  return nluRespond({ message, menu, cart, allergy, spicy, notes, stage, restaurantName, history, language });
+  return nluRespond({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language });
 }
 
 const json = (data, status = 200) => NextResponse.json(data, { status });
@@ -79,6 +79,9 @@ const normalizeTagList = (input) => {
   }
   return out;
 };
+      preference: body.preference || '',
+      avoid: body.avoid || '',
+      notes: body.chefNotes || body.notes || '',
 const makeUpiReference = () => `UPI${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const buildUpiUri = ({ vpa, name, amount, reference }) => {
   const params = new URLSearchParams({
@@ -307,8 +310,8 @@ function buildDemoChatReply({ message = '', language = 'en', restaurantName = 'o
 
   if (/pay|payment|bill|check/.test(lower)) {
     return language === 'es'
-      ? 'Excelente, te ayudo con el pago en linea ahora mismo.'
-      : 'Great, I will help you complete the online payment now.';
+      ? 'Excelente, te ayudo con el pago con tarjeta ahora mismo.'
+      : 'Great, I will help you complete the card payment now.';
   }
 
   return language === 'es'
@@ -335,10 +338,10 @@ function extractDemoChatActions(message = '', menu = []) {
 
   if (addItems.length) actions.add_items = addItems;
 
-  if (/extra[- ]?hot/.test(lower)) actions.set_spicy = 'extra-hot';
-  else if (/\bhot\b|picante/.test(lower)) actions.set_spicy = 'hot';
-  else if (/\bmedium\b|medio/.test(lower)) actions.set_spicy = 'medium';
-  else if (/\bmild\b|suave|no spicy/.test(lower)) actions.set_spicy = 'mild';
+  if (/extra[- ]?hot/.test(lower)) actions.set_preference = 'Spice: extra-hot';
+  else if (/\bhot\b|picante/.test(lower)) actions.set_preference = 'Spice: hot';
+  else if (/\bmedium\b|medio/.test(lower)) actions.set_preference = 'Spice: medium';
+  else if (/\bmild\b|suave|no spicy/.test(lower)) actions.set_preference = 'Spice: mild';
 
   if (/allergy|allergic|alerg/.test(lower)) {
     actions.set_allergy = message.slice(0, 120).trim();
@@ -348,7 +351,7 @@ function extractDemoChatActions(message = '', menu = []) {
     actions.place_order = true;
   }
 
-  if (/(pay|payment|charge|pagar|cobrar|card)/.test(lower)) {
+  if (/(pay|payment|charge|pagar|cobrar|card|stripe)/.test(lower)) {
     actions.pay_now = true;
   }
 
@@ -920,14 +923,14 @@ async function handleDemoRequest(path, method, request) {
   // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
   if (path === 'chat' && method === 'POST') {
     const body = await request.json();
-    const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', spicy = '', notes = '', stage = 'browsing' } = body;
+    const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', preference = '', avoid = '', chefNotes = '', stage = 'browsing' } = body;
     const restaurant = db.restaurants.find((r) => r.id === restaurantId);
 
     const idx = db.chat_sessions.findIndex((s) => s.session_id === sessionId);
     const prev = idx >= 0 ? db.chat_sessions[idx] : { history: [] };
 
     const { reply, actions } = await aiWaiterReply({
-      message, menu, cart, allergy, spicy, notes, stage,
+      message, menu, cart, allergy, preference, avoid, notes: chefNotes, stage,
       restaurantName: restaurant?.name, history: prev.history || [], language,
     });
 
@@ -1327,6 +1330,9 @@ async function handler(request, { params }) {
         status: 'pending',
         allergy: body.allergy || '',
         spicy_level: body.spicyLevel || '',
+        preference: body.preference || '',
+        avoid: body.avoid || '',
+        notes: body.chefNotes || body.notes || '',
         payment_status: 'unpaid',
         payment_reference: '',
         payment_provider: '',
@@ -1353,6 +1359,13 @@ async function handler(request, { params }) {
         const body = await request.json();
         const upd = { updated_at: new Date().toISOString() };
         if (body.status) upd.status = body.status;
+        if (body.allergy !== undefined) upd.allergy = body.allergy;
+        if (body.spicyLevel !== undefined) upd.spicy_level = body.spicyLevel;
+        if (body.preference !== undefined) upd.preference = body.preference;
+        if (body.avoid !== undefined) upd.avoid = body.avoid;
+        if (body.chefNotes !== undefined || body.notes !== undefined) {
+          upd.notes = body.chefNotes || body.notes || '';
+        }
         if (body.status === 'paid') {
           upd.paid_at = new Date().toISOString();
           upd.payment_status = 'paid';
@@ -1632,13 +1645,13 @@ async function handler(request, { params }) {
     // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
     if (path === 'chat' && method === 'POST') {
       const body = await request.json();
-      const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', spicy = '', notes = '', stage = 'browsing' } = body;
+      const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', preference = '', avoid = '', chefNotes = '', stage = 'browsing' } = body;
       const { data: restaurant } = await sb.from('restaurants').select('name').eq('id', restaurantId).maybeSingle();
       const { data: session } = await sb.from('chat_sessions').select('*').eq('session_id', sessionId).maybeSingle();
       const history = (session?.history || []);
 
       const { reply, actions } = await aiWaiterReply({
-        message, menu, cart, allergy, spicy, notes, stage,
+        message, menu, cart, allergy, preference, avoid, notes: chefNotes, stage,
         restaurantName: restaurant?.name, history, language,
       });
 

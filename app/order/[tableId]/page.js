@@ -12,8 +12,6 @@ import {
   Receipt,
   Utensils,
   ChefHat,
-  QrCode,
-  Wallet,
   Download,
   X,
   PlayCircle,
@@ -23,7 +21,6 @@ import {
   Search,
   FileText,
   AlertTriangle,
-  Flame,
   Pencil,
 } from 'lucide-react';
 
@@ -37,8 +34,9 @@ export default function CustomerOrder() {
   const [menu, setMenu] = useState([]);
   const [cart, setCart] = useState([]);
   const [allergy, setAllergy] = useState('');
-  const [spicy, setSpicy] = useState('');
-  const [notes, setNotes] = useState('');
+  const [preference, setPreference] = useState('');
+  const [avoid, setAvoid] = useState('');
+  const [chefNotes, setChefNotes] = useState('');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -49,6 +47,7 @@ export default function CustomerOrder() {
   const [feedback, setFeedback] = useState('');
   const chatEndRef = useRef(null);
   const reminderRef = useRef(0);
+  const cartPromptedRef = useRef(false);
   const [showMenu, setShowMenu] = useState(false);
   const [menuCategory, setMenuCategory] = useState('All');
   const [menuSearch, setMenuSearch] = useState('');
@@ -56,6 +55,14 @@ export default function CustomerOrder() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [showBill, setShowBill] = useState(false);
   const [burst, setBurst] = useState(false);
+  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
+  const [orderSheetMode, setOrderSheetMode] = useState('place');
+  const [draftAllergy, setDraftAllergy] = useState('');
+  const [draftPreference, setDraftPreference] = useState('');
+  const [draftAvoid, setDraftAvoid] = useState('');
+  const [draftChefNotes, setDraftChefNotes] = useState('');
+  const [checkoutUrl, setCheckoutUrl] = useState('');
+  const [pendingItems, setPendingItems] = useState(null);
 
   useEffect(() => {
     if (!tableId) return;
@@ -83,6 +90,18 @@ export default function CustomerOrder() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  useEffect(() => {
+    if (stage !== 'browsing') return;
+    if (cart.length === 0) {
+      cartPromptedRef.current = false;
+      return;
+    }
+    if (!cartPromptedRef.current) {
+      setMessages((m) => [...m, { role: 'assistant', text: 'Ready when you are — say “place order” or tap the button to send it to the kitchen.' }]);
+      cartPromptedRef.current = true;
+    }
+  }, [cart, stage]);
+
   // Poll order status
   useEffect(() => {
     if (!order) return;
@@ -90,20 +109,18 @@ export default function CustomerOrder() {
       const r = await fetch(`/api/orders/${order.id}`, { cache: 'no-store' }).then((r) => r.json());
       if (r.order) {
         setOrder(r.order);
-        if (r.order.paymentReference || r.order.paymentQr) {
-          setPayment((prev) => ({
-            reference: r.order.paymentReference || prev?.reference || '',
-            vpa: r.order.paymentVpa || prev?.vpa || '',
-            payee: restaurant?.name || prev?.payee || '',
-            amount: r.order.total?.toFixed?.(2) || prev?.amount || '',
-            status: r.order.paymentStatus || prev?.status || '',
-            upiUri: r.order.paymentQr || prev?.upiUri || '',
-            createdAt: r.order.paymentCreatedAt || prev?.createdAt || null,
-          }));
-        }
+        setPayment((prev) => ({
+          reference: r.order.paymentReference || prev?.reference || '',
+          provider: r.order.paymentProvider || prev?.provider || 'stripe',
+          method: r.order.paymentMethod || prev?.method || 'card',
+          amount: r.order.total?.toFixed?.(2) || prev?.amount || '',
+          status: r.order.paymentStatus || prev?.status || 'unpaid',
+          checkoutUrl: prev?.checkoutUrl || '',
+          createdAt: r.order.paymentCreatedAt || prev?.createdAt || null,
+        }));
         if (r.order.status === 'ready' && stage === 'ordered') {
           setStage('served');
-          setMessages((m) => [...m, { role: 'assistant', text: '✨ Your food is ready. Please enjoy your meal!' }]);
+          setMessages((m) => [...m, { role: 'assistant', text: '✨ Your food is ready. Enjoy your meal! Want anything else, or should I bring the bill?' }]);
         }
       }
     }, 4000);
@@ -116,11 +133,11 @@ export default function CustomerOrder() {
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/payment/upi/status?orderId=${order.id}`, { cache: 'no-store' });
+        const res = await fetch(`/api/payment/stripe/status?orderId=${order.id}`, { cache: 'no-store' });
         const data = await res.json();
         if (!res.ok || !active) return;
         if (data.order) setOrder(data.order);
-        if (data.payment) setPayment(data.payment);
+        if (data.payment) setPayment((prev) => ({ ...prev, ...data.payment }));
         if (data.payment?.status === 'paid' || data.order?.status === 'paid') {
           setPaymentOpen(false);
           setStage('feedback');
@@ -188,7 +205,6 @@ export default function CustomerOrder() {
       currentOrder.paymentReference || currentPayment?.reference ? `Reference: ${currentOrder.paymentReference || currentPayment?.reference}` : '',
       currentOrder.paymentProvider ? `Provider: ${currentOrder.paymentProvider}` : '',
       currentOrder.paymentMethod ? `Method: ${currentOrder.paymentMethod}` : '',
-      currentOrder.paymentVpa || currentPayment?.vpa ? `VPA: ${currentOrder.paymentVpa || currentPayment?.vpa}` : '',
     ].filter(Boolean);
     const itemsHtml = (currentOrder.items || []).map((i) => `
       <tr>
@@ -232,14 +248,57 @@ export default function CustomerOrder() {
     a.download = `receipt-${currentOrder.id.slice(0, 8)}.html`;
     a.click();
     URL.revokeObjectURL(url);
+    setMessages((m) => [...m, { role: 'assistant', text: 'Receipt downloaded. When you are ready, tap Pay to complete payment.' }]);
   };
 
-  const placeOrder = async (itemsOverride = null) => {
+  const openOrderSheet = (mode = 'place', itemsOverride = null) => {
+    setOrderSheetMode(mode);
+    setPendingItems(itemsOverride || cart);
+    setDraftAllergy(allergy || '');
+    setDraftPreference(preference || '');
+    setDraftAvoid(avoid || '');
+    setDraftChefNotes(chefNotes || '');
+    setOrderSheetOpen(true);
+  };
+
+  const confirmOrderSheet = async () => {
+    const instructions = {
+      allergy: draftAllergy.trim(),
+      preference: draftPreference.trim(),
+      avoid: draftAvoid.trim(),
+      chefNotes: draftChefNotes.trim(),
+    };
+    setAllergy(instructions.allergy);
+    setPreference(instructions.preference);
+    setAvoid(instructions.avoid);
+    setChefNotes(instructions.chefNotes);
+    setOrderSheetOpen(false);
+    const items = pendingItems || cart;
+    setPendingItems(null);
+    if (orderSheetMode === 'place') await placeOrder(items, instructions);
+    else await addOnsAfterOrder(items);
+  };
+
+  const placeOrder = async (itemsOverride = null, instructionsOverride = null) => {
     const items = itemsOverride || cart;
+    const instructions = instructionsOverride || {
+      allergy,
+      preference,
+      avoid,
+      chefNotes,
+    };
     if (items.length === 0) return toast.error('Cart is empty');
     const res = await fetch('/api/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId: restaurant.id, tableId: table.id, items, allergy, spicyLevel: spicy, notes }),
+      body: JSON.stringify({
+        restaurantId: restaurant.id,
+        tableId: table.id,
+        items,
+        allergy: instructions.allergy,
+        preference: instructions.preference,
+        avoid: instructions.avoid,
+        chefNotes: instructions.chefNotes,
+      }),
     });
     const data = await res.json();
     if (!res.ok) return toast.error(data.error || 'Failed');
@@ -249,7 +308,7 @@ export default function CustomerOrder() {
     setCart([]);
     setBurst(true);
     setTimeout(() => setBurst(false), 2800);
-    setMessages((m) => [...m, { role: 'assistant', text: `🎉 Order confirmed. Ticket #${data.order.id.slice(0, 6).toUpperCase()} sent to the kitchen — they're on it.` }]);
+    setMessages((m) => [...m, { role: 'assistant', text: `🎉 Order confirmed. Ticket #${data.order.id.slice(0, 6).toUpperCase()} is live in the kitchen.` }]);
   };
 
   const addOnsAfterOrder = async (itemsOverride = null) => {
@@ -263,26 +322,36 @@ export default function CustomerOrder() {
     if (!res.ok) return toast.error(data.error || 'Failed');
     setOrder(data.order);
     setCart([]);
-    setMessages((m) => [...m, { role: 'assistant', text: `Added to your tab. New total: $${data.order.total.toFixed(2)}.` }]);
+    setMessages((m) => [...m, { role: 'assistant', text: `Added to your tab. New total: $${data.order.total.toFixed(2)}. Want anything else?` }]);
   };
 
-  const startUpiPayment = async () => {
+  const startStripePayment = async () => {
     if (!order) return;
     setStage('paying');
-    setMessages((m) => [...m, { role: 'assistant', text: `Opening UPI payment for $${order.total.toFixed(2)}.` }]);
+    setMessages((m) => [...m, { role: 'assistant', text: `Opening secure card payment for $${order.total.toFixed(2)}.` }]);
     try {
-      const res = await fetch('/api/payment/upi/init', {
+      const res = await fetch('/api/payment/stripe/init', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: order.id }),
       });
       const data = await res.json();
       if (!res.ok) return toast.error(data.error || 'Payment init failed');
-      setOrder(data.order);
-      setPayment(data.payment || null);
+      if (data.order) setOrder(data.order);
+      if (data.payment) setPayment(data.payment || null);
+      if (data.checkoutUrl) setCheckoutUrl(data.checkoutUrl);
       setPaymentOpen(true);
+      if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank', 'noopener,noreferrer');
     } catch (e) {
-      toast.error('Unable to start UPI payment');
+      toast.error('Unable to start card payment');
     }
+  };
+
+  const openCheckout = () => {
+    if (checkoutUrl) {
+      window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    startStripePayment();
   };
 
   const submitFeedback = async () => {
@@ -299,6 +368,13 @@ export default function CustomerOrder() {
     const text = textOverride || input.trim();
     if (!text || sending) return;
     const lower = text.toLowerCase();
+    if (stage === 'served' && /^(no|nope|nothing|that's all|thats all|bill|check)/i.test(lower)) {
+      setMessages((m) => [...m, { role: 'user', text }]);
+      if (!textOverride) setInput('');
+      setShowBill(true);
+      setMessages((m) => [...m, { role: 'assistant', text: 'Got it. Here is your itemized bill.' }]);
+      return;
+    }
     const wantsMenu = /\bmenu\b|show\s+me\s+the\s+menu|what\s+do\s+you\s+have|dishes|food/.test(lower);
     if (wantsMenu) {
       setMenuCategory('All');
@@ -314,7 +390,7 @@ export default function CustomerOrder() {
           sessionId, restaurantId: restaurant.id, tableId: table.id, language: 'en',
           message: text,
           menu: menu.map((m) => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [] })),
-          cart, allergy, spicy, notes, stage,
+          cart, allergy, preference, avoid, chefNotes, stage,
         }),
       });
       const data = await res.json();
@@ -334,14 +410,16 @@ export default function CustomerOrder() {
       }
 
       if (data.actions?.set_allergy) setAllergy(data.actions.set_allergy);
-      if (data.actions?.set_spicy) setSpicy(data.actions.set_spicy);
-      if (data.actions?.set_notes) setNotes(data.actions.set_notes);
+      if (data.actions?.set_preference) setPreference(data.actions.set_preference);
+      if (data.actions?.set_avoid) setAvoid(data.actions.set_avoid);
+      if (data.actions?.set_notes) setChefNotes(data.actions.set_notes);
+      if (data.actions?.set_spicy && !preference) setPreference(`Spice: ${data.actions.set_spicy}`);
       if (data.actions?.show_menu) { setMenuCategory('All'); setShowMenu(true); }
       if (data.actions?.clear_last) setCart((prev) => prev.slice(0, -1));
       if (data.actions?.show_bill && order) setShowBill(true);
 
       if (data.actions?.place_order) {
-        if (stage === 'browsing') await placeOrder(nextCart);
+        if (stage === 'browsing') openOrderSheet('place', nextCart);
         else if (stage === 'ordered' || stage === 'served') await addOnsAfterOrder(nextCart);
       }
 
@@ -419,7 +497,7 @@ export default function CustomerOrder() {
                     onClick={() => setPaymentOpen(true)}
                     className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-neutral-900 text-white px-2.5 py-1 text-[10px] font-semibold"
                   >
-                    <QrCode className="h-3 w-3" />Payment
+                    <Receipt className="h-3 w-3" />Payment
                   </button>
                 )}
                 {order.status === 'paid' && (
@@ -553,27 +631,32 @@ export default function CustomerOrder() {
                   <Button
                     size="sm"
                     className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
-                    onClick={() => (stage === 'browsing' ? placeOrder() : addOnsAfterOrder())}
+                    onClick={() => (stage === 'browsing' ? openOrderSheet('place') : addOnsAfterOrder())}
                   >
                     {stage === 'browsing' ? 'Place order' : 'Add to tab'}
                   </Button>
                 </div>
               </div>
-              {(allergy || spicy || notes) && (
+              {(allergy || preference || avoid || chefNotes) && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {allergy && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 px-2 py-0.5 text-[10px]">
                       <AlertTriangle className="h-3 w-3" />{allergy}
                     </span>
                   )}
-                  {spicy && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 text-[10px]">
-                      <Flame className="h-3 w-3" />{spicy}
+                  {preference && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 text-[10px]">
+                      <Sparkles className="h-3 w-3" />{preference}
                     </span>
                   )}
-                  {notes && (
+                  {avoid && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 px-2 py-0.5 text-[10px]">
+                      <X className="h-3 w-3" />No {avoid}
+                    </span>
+                  )}
+                  {chefNotes && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-700 px-2 py-0.5 text-[10px]">
-                      <Pencil className="h-3 w-3" />{notes}
+                      <Pencil className="h-3 w-3" />{chefNotes}
                     </span>
                   )}
                 </div>
@@ -689,12 +772,87 @@ export default function CustomerOrder() {
                   <Button
                     size="sm"
                     className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
-                    onClick={() => { setShowMenu(false); if (stage === 'browsing') placeOrder(); else addOnsAfterOrder(); }}
+                    onClick={() => { setShowMenu(false); if (stage === 'browsing') openOrderSheet('place'); else addOnsAfterOrder(); }}
                   >
                     {stage === 'browsing' ? 'Place order' : 'Add to tab'}
                   </Button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ========== ORDER INSTRUCTIONS MODAL ========== */}
+        {orderSheetOpen && (
+          <div className="absolute inset-0 z-50 bg-neutral-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in">
+            <div className="absolute inset-0" onClick={() => setOrderSheetOpen(false)} />
+            <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl">
+              <div className="bg-emerald-700 text-white px-6 py-5">
+                <div className="text-[10px] uppercase tracking-[0.3em] font-bold opacity-80">Almost there</div>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="text-2xl">🎉</div>
+                  <div className="font-display text-xl font-bold tracking-tight">Kitchen instructions</div>
+                </div>
+                <div className="text-xs text-emerald-100 mt-1">We will generate your ticket right after you confirm.</div>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] text-emerald-900">
+                  {pendingItems?.length || cart.length ? (
+                    <span className="font-semibold">{(pendingItems || cart).length} items</span>
+                  ) : (
+                    <span className="text-emerald-700">Cart is empty</span>
+                  )}
+                  <span className="ml-2">${(pendingItems || cart).reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}</span>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-700">Allergy</label>
+                  <Input
+                    value={draftAllergy}
+                    onChange={(e) => setDraftAllergy(e.target.value)}
+                    placeholder="e.g. peanuts, dairy"
+                    className="mt-1.5 h-11 bg-white border-neutral-200 rounded-xl focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-700">I want</label>
+                  <Input
+                    value={draftPreference}
+                    onChange={(e) => setDraftPreference(e.target.value)}
+                    placeholder="e.g. extra cheese, well done"
+                    className="mt-1.5 h-11 bg-white border-neutral-200 rounded-xl focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-700">I do not want</label>
+                  <Input
+                    value={draftAvoid}
+                    onChange={(e) => setDraftAvoid(e.target.value)}
+                    placeholder="e.g. no onions, no garlic"
+                    className="mt-1.5 h-11 bg-white border-neutral-200 rounded-xl focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-700">Chef notes</label>
+                  <textarea
+                    value={draftChefNotes}
+                    onChange={(e) => setDraftChefNotes(e.target.value)}
+                    placeholder="Any extra instructions for the chef"
+                    className="mt-1.5 w-full min-h-[90px] bg-white border border-neutral-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
+                  />
+                </div>
+              </div>
+              <div className="shrink-0 border-t border-neutral-100 px-6 py-4 bg-white flex gap-2">
+                <Button variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => setOrderSheetOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11 shadow-md shadow-emerald-700/20"
+                  onClick={confirmOrderSheet}
+                  disabled={(pendingItems || cart).length === 0}
+                >
+                  {orderSheetMode === 'place' ? 'Place order' : 'Add to tab'}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -727,11 +885,12 @@ export default function CustomerOrder() {
                     </div>
                   ))}
                 </div>
-                {(allergy || spicy || notes) && (
+                {(allergy || preference || avoid || chefNotes) && (
                   <div className="mx-6 mb-4 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] text-emerald-900 space-y-0.5">
                     {allergy && <div>⚠ <span className="font-semibold">Allergy:</span> {allergy}</div>}
-                    {spicy && <div>🌶 <span className="font-semibold">Spice:</span> {spicy}</div>}
-                    {notes && <div>✍ <span className="font-semibold">Notes:</span> {notes}</div>}
+                    {preference && <div>✨ <span className="font-semibold">Wants:</span> {preference}</div>}
+                    {avoid && <div>⛔ <span className="font-semibold">Avoid:</span> {avoid}</div>}
+                    {chefNotes && <div>✍ <span className="font-semibold">Chef notes:</span> {chefNotes}</div>}
                   </div>
                 )}
                 <div className="px-6 pb-4 space-y-1 text-sm">
@@ -764,9 +923,9 @@ export default function CustomerOrder() {
                 <Button
                   className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11 shadow-md shadow-emerald-700/20"
                   disabled={order.status === 'paid'}
-                  onClick={async () => { setShowBill(false); await startUpiPayment(); }}
+                  onClick={async () => { setShowBill(false); await startStripePayment(); }}
                 >
-                  <Wallet className="h-4 w-4 mr-2" />
+                  <FileText className="h-4 w-4 mr-2" />
                   {order.status === 'paid' ? 'Already paid' : `Pay $${order.total.toFixed(2)}`}
                 </Button>
               </div>
@@ -782,6 +941,9 @@ export default function CustomerOrder() {
               <div className="text-7xl mb-3 animate-bounce">🎉</div>
               <div className="font-display text-2xl font-extrabold text-white tracking-tight drop-shadow">Order placed</div>
               <div className="text-sm text-emerald-100 mt-1">The chef has your ticket.</div>
+              {order?.id && (
+                <div className="text-xs text-emerald-100/80 mt-1">Ticket #{order.id.slice(0, 6).toUpperCase()}</div>
+              )}
             </div>
             {Array.from({ length: 28 }).map((_, i) => {
               const emojis = ['🎉', '✨', '🍽️', '🥂', '⭐', '🍴', '💫', '🔥'];
@@ -809,14 +971,14 @@ export default function CustomerOrder() {
           </div>
         )}
 
-        {/* UPI Payment Modal */}
+        {/* Card Payment Modal (Stripe) */}
         {paymentOpen && (
           <div className="absolute inset-0 z-50 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center p-5 animate-in fade-in">
             <div className="absolute inset-0" onClick={() => setPaymentOpen(false)} />
             <div className="relative w-full max-w-sm bg-white rounded-3xl overflow-hidden shadow-2xl">
               <div className="bg-emerald-700 p-6 text-white text-center">
-                <QrCode className="w-12 h-12 mx-auto mb-3 opacity-90" />
-                <h2 className="font-display text-xl font-bold tracking-tight">UPI Payment</h2>
+                <Receipt className="w-12 h-12 mx-auto mb-3 opacity-90" />
+                <h2 className="font-display text-xl font-bold tracking-tight">Card Payment</h2>
                 <p className="text-emerald-50/90 text-sm mt-1">{restaurant.name}</p>
               </div>
               <div className="p-6 space-y-4">
@@ -835,32 +997,18 @@ export default function CustomerOrder() {
                 <div className="text-xs text-neutral-500">
                   Reference: <span className="font-mono text-neutral-800">{payment?.reference || order?.paymentReference || 'Generating…'}</span>
                 </div>
-                <div className="rounded-2xl bg-neutral-50 border border-neutral-200 p-3 text-center">
-                  {payment?.upiUri || order?.paymentQr ? (
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payment?.upiUri || order?.paymentQr || '')}`}
-                      alt="UPI QR"
-                      className="mx-auto"
-                    />
-                  ) : (
-                    <div className="text-xs text-neutral-400 py-10">Preparing QR…</div>
-                  )}
-                </div>
-                <div className="text-xs text-neutral-500 flex items-center justify-between">
-                  <span>VPA: <span className="font-mono text-neutral-800">{payment?.vpa || order?.paymentVpa || 'netrik@upi'}</span></span>
-                  <span>{payment?.payee || 'Netrik Shop'}</span>
+                <div className="rounded-2xl bg-neutral-50 border border-neutral-200 p-4 text-center text-sm text-neutral-600">
+                  Secure card checkout powered by Stripe. You will return here after payment.
                 </div>
                 <div className="flex gap-2">
-                  <Button asChild className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white">
-                    <a href={payment?.upiUri || order?.paymentQr || '#'}>
-                      <ExternalLink className="h-4 w-4 mr-2" />Open UPI app
-                    </a>
+                  <Button className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white" onClick={openCheckout}>
+                    <ExternalLink className="h-4 w-4 mr-2" />Open secure payment
                   </Button>
                   <Button variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadReceipt(order, payment)}>
                     <Download className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="text-center text-[11px] text-neutral-400">This is a demo UPI flow. Payment auto-confirms in a few seconds.</div>
+                <div className="text-center text-[11px] text-neutral-400">Keep this screen open to see payment confirmation.</div>
               </div>
             </div>
           </div>

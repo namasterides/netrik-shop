@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS public.orders (
   status        TEXT NOT NULL DEFAULT 'pending', -- pending|preparing|ready|served|paid|cancelled
   allergy       TEXT DEFAULT '',
   spicy_level   TEXT DEFAULT '',
+  preference    TEXT DEFAULT '',
+  avoid         TEXT DEFAULT '',
+  notes         TEXT DEFAULT '',
   paid_at       TIMESTAMPTZ,
   payment_status   TEXT NOT NULL DEFAULT 'unpaid', -- unpaid|pending|paid|failed
   payment_reference TEXT DEFAULT '',
@@ -112,6 +115,9 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT '
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_vpa TEXT DEFAULT '';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_qr TEXT DEFAULT '';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_created_at TIMESTAMPTZ;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS preference TEXT DEFAULT '';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS avoid TEXT DEFAULT '';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_orders_restaurant ON public.orders(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_table      ON public.orders(table_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status     ON public.orders(restaurant_id, status);

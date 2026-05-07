@@ -45,6 +45,24 @@ BEGIN
   END IF;
 END $$;
 
+-- Add preference & avoid fields (what they want / don't want)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'preference'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN preference TEXT DEFAULT '';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'avoid'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN avoid TEXT DEFAULT '';
+  END IF;
+END $$;
+
 -- ============================================
 
 -- 3. ADD isAdditional FLAG TO ITEMS IN ORDERS
