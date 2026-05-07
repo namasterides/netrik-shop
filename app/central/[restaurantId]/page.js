@@ -552,14 +552,6 @@ export default function RestaurantDetail() {
 
           {/* CREDENTIALS */}
           <TabsContent value="credentials" className="mt-5 space-y-5">
-            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
-              <ShieldCheck className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-900">
-                <div className="font-semibold">Sensitive credentials</div>
-                <div className="text-amber-800/90">Passwords are masked by default. Reveal only when sharing securely with the restaurant team. These were emailed on tenant creation.</div>
-              </div>
-            </div>
-
             <div>
               <div className="font-display font-bold text-lg mb-3 tracking-tight">Management accounts</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
