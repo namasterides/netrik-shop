@@ -110,9 +110,9 @@ export default function Landing() {
           scrolled ? 'bg-white/85 backdrop-blur-xl border-b border-neutral-200/80' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[6.75rem] flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[5.5rem] md:h-[5.75rem] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <NetrikLogo variant="primary" className="h-24 md:h-[6.75rem] w-auto max-w-[540px] md:max-w-[630px]" />
+            <NetrikLogo variant="primary" className="h-[5rem] md:h-[5.5rem] w-auto max-w-[640px] md:max-w-[720px]" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-9 text-[14px] font-medium text-neutral-600">

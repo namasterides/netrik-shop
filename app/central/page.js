@@ -32,6 +32,7 @@ import { NetrikLogo } from '@/components/netrik-logo';
 
 const SUBSCRIPTIONS = ['Starter', 'Pro', 'Premium', 'Enterprise'];
 const COLORS = ['#047857', '#10b981', '#34d399', '#a7f3d0'];
+const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
 
 export default function CentralAdmin() {
   const router = useRouter();
@@ -187,9 +188,10 @@ export default function CentralAdmin() {
   const copy = (text) => { navigator.clipboard.writeText(text); toast.success('Copied'); };
 
   const downloadRestaurantsCsv = () => {
-    const rows = [['Restaurant', 'Owner', 'Email', 'Contact', 'Subscription', 'Domain', 'Created']];
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
+    const rows = [['Netrik Logo', 'Restaurant', 'Owner', 'Email', 'Contact', 'Subscription', 'Domain', 'Created']];
     list.forEach((r) => {
-      rows.push([r.name, r.ownerName, r.email || '', r.contact, r.subscription, r.domain || '', new Date(r.createdAt).toLocaleDateString()]);
+      rows.push([brandLogoUrl, r.name, r.ownerName, r.email || '', r.contact, r.subscription, r.domain || '', new Date(r.createdAt).toLocaleDateString()]);
     });
     const csv = rows.map((row) => row.map((col) => `"${String(col).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -204,6 +206,7 @@ export default function CentralAdmin() {
   const printRestaurants = () => {
     const w = window.open('', '_blank');
     if (!w) return;
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     const rows = list.map((r) => `
       <tr>
         <td>${r.name}</td>
@@ -216,13 +219,21 @@ export default function CentralAdmin() {
       </tr>`).join('');
     w.document.write(`<html><head><title>Restaurants Report</title><style>
       body{font-family:Inter,Segoe UI,Arial,sans-serif;padding:32px;color:#0a0a0a}
+      .brand{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+      .brand img{height:42px;width:auto;display:block}
       h1{margin:0 0 8px 0;font-weight:700}
       p{margin:0 0 18px 0;color:#666;font-size:12px}
       table{width:100%;border-collapse:collapse;font-size:12px}
       th,td{border-bottom:1px solid #e5e7eb;padding:10px 8px;text-align:left;vertical-align:top}
       th{background:#fafafa;text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#525252}
     </style></head><body>
-      <h1>Netrik Shop · Restaurants</h1>
+      <div class="brand">
+        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        <div>
+          <h1>Netrik Shop · Restaurants</h1>
+          <div style="color:#6b7280;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Central report</div>
+        </div>
+      </div>
       <p>Printed on ${new Date().toLocaleString()}</p>
       <table>
         <thead><tr><th>Restaurant</th><th>Owner</th><th>Email</th><th>Contact</th><th>Plan</th><th>Domain</th><th>Created</th></tr></thead>
@@ -247,9 +258,9 @@ export default function CentralAdmin() {
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[6.75rem] flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[5.5rem] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <NetrikLogo variant="primary" className="h-[6.75rem] w-auto max-w-[570px]" />
+            <NetrikLogo variant="primary" className="h-[5.25rem] w-auto max-w-[680px]" />
             <div className="min-w-0">
               <div className="font-bold tracking-tight">Central Admin</div>
             </div>

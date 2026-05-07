@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import LoadingLogo from '@/components/loading-logo';
 import {
   Send,
   Star,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 
 const FALLBACK_MENU_IMAGE = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
+const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
 
 export default function CustomerOrder() {
   const { tableId } = useParams();
@@ -181,27 +183,54 @@ export default function CustomerOrder() {
 
   const downloadReceipt = (currentOrder, currentPayment) => {
     if (!currentOrder) return;
-    const lines = [
-      `${restaurant?.name || 'Restaurant'} Receipt`,
-      `Order: ${currentOrder.id}`,
-      `Table: ${currentOrder.tableNumber}`,
-      `Status: ${currentOrder.status}`,
-      `Payment: ${currentOrder.paymentStatus || currentPayment?.status || 'unpaid'}`,
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
+    const details = [
       currentOrder.paymentReference || currentPayment?.reference ? `Reference: ${currentOrder.paymentReference || currentPayment?.reference}` : '',
       currentOrder.paymentProvider ? `Provider: ${currentOrder.paymentProvider}` : '',
       currentOrder.paymentMethod ? `Method: ${currentOrder.paymentMethod}` : '',
       currentOrder.paymentVpa || currentPayment?.vpa ? `VPA: ${currentOrder.paymentVpa || currentPayment?.vpa}` : '',
-      `Total: $${currentOrder.total.toFixed(2)}`,
-      `Created: ${new Date(currentOrder.createdAt).toLocaleString()}`,
-      '',
-      'Items:',
-      ...(currentOrder.items || []).map((i) => `- ${i.qty}x ${i.name} (${(i.price * i.qty).toFixed(2)})`),
     ].filter(Boolean);
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const itemsHtml = (currentOrder.items || []).map((i) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;">${i.qty}x</td>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;">${i.name}</td>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;text-align:right;">$${(i.price * i.qty).toFixed(2)}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Receipt ${currentOrder.id.slice(0, 8)}</title>
+      <style>
+        body{font-family:Inter,Segoe UI,Arial,sans-serif;padding:28px;color:#0a0a0a}
+        .brand{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+        .brand img{height:36px;width:auto}
+        h1{font-size:18px;margin:0}
+        .meta{color:#6b7280;font-size:12px;margin-top:4px}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+        th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;text-align:left;padding-bottom:6px}
+        td{vertical-align:top}
+        .total{font-size:16px;font-weight:700;margin-top:12px;text-align:right}
+      </style>
+    </head><body>
+      <div class="brand">
+        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        <div>
+          <h1>${restaurant?.name || 'Restaurant'} Receipt</h1>
+          <div class="meta">Order ${currentOrder.id.slice(0, 8).toUpperCase()} · Table ${currentOrder.tableNumber}</div>
+        </div>
+      </div>
+      <div class="meta">Status: ${currentOrder.status} · Payment: ${currentOrder.paymentStatus || currentPayment?.status || 'unpaid'}</div>
+      <div class="meta">Created: ${new Date(currentOrder.createdAt).toLocaleString()}</div>
+      ${details.length ? details.map((d) => `<div class="meta">${d}</div>`).join('') : ''}
+      <table>
+        <thead><tr><th>Qty</th><th>Item</th><th style="text-align:right;">Total</th></tr></thead>
+        <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
+      </table>
+      <div class="total">Total: $${currentOrder.total.toFixed(2)}</div>
+      <div class="meta" style="margin-top:8px;">Powered by Netrik Shop</div>
+    </body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt-${currentOrder.id.slice(0, 8)}.txt`;
+    a.download = `receipt-${currentOrder.id.slice(0, 8)}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -335,7 +364,10 @@ export default function CustomerOrder() {
   if (!restaurant || !table) {
     return (
       <div className="min-h-screen bg-white text-neutral-500 flex items-center justify-center text-sm">
-        Connecting to your table…
+        <div className="flex flex-col items-center gap-3">
+          <LoadingLogo className="h-12 w-12" alt="Connecting" />
+          <div>Connecting to your table…</div>
+        </div>
       </div>
     );
   }
@@ -676,6 +708,7 @@ export default function CustomerOrder() {
               <div className="bg-emerald-900 text-white px-6 py-5 flex items-start justify-between">
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.3em] font-bold opacity-70">Itemised bill</div>
+                  <img src={BRAND_LOGO_PATH} alt="Netrik Shop" className="h-6 w-auto mt-2 mb-1 opacity-90" />
                   <div className="font-display text-2xl font-bold tracking-tight mt-0.5">{restaurant.name}</div>
                   <div className="text-xs opacity-70 mt-0.5">Table {table.number} · Ticket #{order.id.slice(0, 6).toUpperCase()}</div>
                 </div>

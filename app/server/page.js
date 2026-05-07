@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LogOut, UserCheck, Clock, DollarSign, UtensilsCrossed, Users, AlertTriangle, Flame, Pencil } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
 
 export default function ServerDashboard() {
   const router = useRouter();
@@ -54,7 +55,10 @@ export default function ServerDashboard() {
   if (!me || !restaurant) {
     return (
       <div className="min-h-screen grid place-items-center bg-white text-neutral-500 text-sm">
-        Loading server view…
+        <div className="flex flex-col items-center gap-3">
+          <LoadingLogo className="h-12 w-12" alt="Loading server view" />
+          <div>Loading server view…</div>
+        </div>
       </div>
     );
   }

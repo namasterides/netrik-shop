@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LogOut, Clock, CheckCircle2, Printer, ChefHat, Flame, AlertTriangle, FileText } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
+
+const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
 
 export default function ChefDashboard() {
   const router = useRouter();
@@ -13,7 +16,8 @@ export default function ChefDashboard() {
   const [restaurant, setRestaurant] = useState(null);
   const [orders, setOrders] = useState([]);
   const [language, setLanguage] = useState('both');
-  const [lastOrderCount, setLastOrderCount] = useState(0);
+  const printedOrdersRef = useRef(new Set());
+  const hasSeededRef = useRef(false);
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem('netrik_user') || 'null');
@@ -47,15 +51,26 @@ export default function ChefDashboard() {
     setRestaurant(r.restaurant);
     const activeOrders = (o.orders || []).filter(x => ['pending','preparing','ready'].includes(x.status));
     setOrders(activeOrders);
-    setLastOrderCount(activeOrders.length);
+    if (!hasSeededRef.current) {
+      printedOrdersRef.current = new Set(activeOrders.map((o) => o.id));
+      hasSeededRef.current = true;
+    }
   };
 
   // Auto-print KOT when new orders arrive
   useEffect(() => {
-    if (orders.length > lastOrderCount && lastOrderCount > 0) {
-      setTimeout(() => { window.print(); }, 500);
-    }
-  }, [orders.length, lastOrderCount]);
+    if (!orders.length || !restaurant) return;
+    const printed = printedOrdersRef.current;
+    const newOrders = orders.filter((o) => !printed.has(o.id));
+    if (!newOrders.length) return;
+    newOrders
+      .slice()
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .forEach((o, idx) => {
+        printed.add(o.id);
+        setTimeout(() => { printTicket(o); }, idx * 500);
+      });
+  }, [orders, restaurant]);
 
   const advance = async (o) => {
     const next = o.status === 'pending' ? 'preparing' : o.status === 'preparing' ? 'ready' : 'served';
@@ -66,14 +81,16 @@ export default function ChefDashboard() {
   const printTicket = (o) => {
     const w = window.open('', '_blank');
     if (!w) return;
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     const lines = o.items.map((i) => {
       const isAdditional = i.isAdditional || false;
       const additionalMark = isAdditional ? '<span style="color:#047857;font-weight:bold;font-size:11px">[ADDITIONAL]</span>' : '';
       return `<tr><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.qty}×</b></td><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.name}</b> ${additionalMark}<br/><span style='color:#666;font-size:11px'>${i.nameEs||''}</span>${i.notes?`<div style='font-size:11px;color:#444'>Note: ${i.notes}</div>`:''}</td></tr>`;
     }).join('');
-    w.document.write(`<html><head><title>Ticket #${o.id.slice(0,6)}</title><style>body{font-family:'Inter',monospace;width:300px;padding:16px;color:#111}h2{margin:0;font-size:18px}table{width:100%;border-collapse:collapse}td{vertical-align:top}.muted{color:#666;font-size:11px}</style></head><body>
+    w.document.write(`<html><head><title>Ticket #${o.id.slice(0,6)}</title><style>body{font-family:'Inter',monospace;width:300px;padding:16px;color:#111}h2{margin:6px 0 0;font-size:18px}table{width:100%;border-collapse:collapse}td{vertical-align:top}.muted{color:#666;font-size:11px}img{height:28px;width:auto;display:block}</style></head><body>
+      <img src="${brandLogoUrl}" alt="Netrik Shop" />
       <h2>${restaurant?.name||''}</h2>
-      <div class="muted">by Netrik Shop</div>
+      <div class="muted">Kitchen ticket · Netrik Shop</div>
       <hr style="border:none;border-top:1px solid #ddd;margin:12px 0"/>
       <div><b>Ticket #${o.id.slice(0,6).toUpperCase()}</b></div>
       <div>Table ${o.tableNumber} · Mesa ${o.tableNumber}</div>
@@ -90,7 +107,10 @@ export default function ChefDashboard() {
   if (!me || !restaurant) {
     return (
       <div className="min-h-screen grid place-items-center bg-white text-neutral-500 text-sm">
-        Loading kitchen…
+        <div className="flex flex-col items-center gap-3">
+          <LoadingLogo className="h-12 w-12" alt="Loading kitchen" />
+          <div>Loading kitchen…</div>
+        </div>
       </div>
     );
   }
@@ -102,12 +122,12 @@ export default function ChefDashboard() {
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[6.75rem] flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[5.5rem] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {restaurant.logoUrl ? (
-              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-9 w-9 rounded-xl object-cover border border-neutral-200" />
+              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-11 w-11 rounded-xl object-cover border border-neutral-200" />
             ) : (
-              <NetrikLogo className="h-[6.75rem] w-[6.75rem]" />
+              <NetrikLogo className="h-12 w-auto" />
             )}
             <div className="min-w-0">
               <div className="font-bold tracking-tight truncate">{restaurant.name}</div>

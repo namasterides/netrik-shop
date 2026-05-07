@@ -145,6 +145,53 @@ code {
 }
 .netrik-pulse { animation: netrik-pulse 2s ease-in-out infinite; }
 
+/* Loading logo animation */
+.netrik-loading-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+}
+
+.netrik-loading-ring {
+  position: absolute;
+  width: 140%;
+  height: 140%;
+  border-radius: 9999px;
+  border: 1px solid rgba(4, 120, 87, 0.25);
+  box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.08);
+  animation: netrik-ring-pulse 1.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.netrik-loading-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: netrik-logo-float 1.4s ease-in-out infinite;
+  filter: drop-shadow(0 6px 14px rgba(4, 120, 87, 0.2));
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+@keyframes netrik-logo-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.9; }
+  50% { transform: translateY(-4px) scale(1.03); opacity: 1; }
+}
+
+@keyframes netrik-ring-pulse {
+  0%, 100% { transform: scale(0.96); opacity: 0.55; }
+  50% { transform: scale(1.02); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .netrik-loading-logo,
+  .netrik-loading-ring {
+    animation: none;
+  }
+}
+
 @keyframes scrollPulse {
   0%, 100% { transform: scaleY(0.4); transform-origin: top; opacity: 0.4; }
   50% { transform: scaleY(1); transform-origin: top; opacity: 1; }

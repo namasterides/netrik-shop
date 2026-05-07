@@ -60,7 +60,7 @@ export default function LoginPage() {
         <div className="absolute -left-20 bottom-0 w-[360px] h-[360px] bg-emerald-600/30 blur-3xl rounded-full pointer-events-none" />
 
         <Link href="/" className="relative flex items-center gap-2.5 group w-fit">
-          <NetrikLogo variant="login" className="h-[6.75rem] md:h-[7.5rem] w-auto max-w-[630px]" />
+          <NetrikLogo variant="login" className="h-[7.5rem] md:h-[8.5rem] w-auto max-w-[700px]" />
         </Link>
 
         <div className="relative max-w-md">
@@ -108,7 +108,7 @@ export default function LoginPage() {
 
           {/* Mobile-only logo */}
           <div className="lg:hidden mt-5 flex items-center gap-2.5">
-            <NetrikLogo variant="login" className="h-24 w-auto max-w-[570px]" />
+            <NetrikLogo variant="login" className="h-28 w-auto max-w-[640px]" />
           </div>
 
           <h1 className="mt-6 font-display text-3xl md:text-4xl font-bold tracking-tight">Sign in</h1>

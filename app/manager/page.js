@@ -39,12 +39,14 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
+import LoadingLogo from '@/components/loading-logo';
 
 const CATEGORIES = ['Starters', 'Mains', 'Desserts', 'Drinks', 'Specials'];
 const FOOD_IMG = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
 const MOOD_PRESETS = ['light', 'hearty', 'comfort', 'indulgent', 'energizing', 'romantic', 'celebratory', 'cozy', 'refreshing', 'adventurous'];
 const TASTE_PRESETS = ['tangy', 'sweet', 'savory', 'spicy', 'rich', 'smoky', 'fresh', 'umami', 'sour', 'bitter', 'crispy', 'creamy', 'buttery', 'zesty'];
 const DIETARY_PRESETS = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'nut-free', 'halal', 'kosher', 'keto', 'low-carb', 'high-protein', 'jain'];
+const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
 
 function TagPicker({ label, hint, value, onChange, presets, accent = 'emerald' }) {
   const tags = Array.isArray(value) ? value : [];
@@ -305,9 +307,10 @@ export default function ManagerDashboard() {
   const filteredOrders = useMemo(() => orders.filter((o) => orderInRange(o, startDate, endDate)), [orders, startDate, endDate]);
 
   const downloadCSV = (dataRows = orders, filenamePrefix = 'orders') => {
-    const csvRows = [['Date', 'Order #', 'Table', 'Items', 'Total', 'Status']];
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
+    const csvRows = [['Netrik Logo', 'Date', 'Order #', 'Table', 'Items', 'Total', 'Status']];
     dataRows.forEach((o) => {
-      csvRows.push([new Date(o.createdAt).toLocaleString(), o.id.slice(0, 8), o.tableNumber, o.items.map((i) => `${i.qty}x ${i.name}`).join('; '), o.total.toFixed(2), o.status]);
+      csvRows.push([brandLogoUrl, new Date(o.createdAt).toLocaleString(), o.id.slice(0, 8), o.tableNumber, o.items.map((i) => `${i.qty}x ${i.name}`).join('; '), o.total.toFixed(2), o.status]);
     });
     const csv = csvRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -322,6 +325,7 @@ export default function ManagerDashboard() {
   const printOrdersA4 = (rows = orders, title = 'Orders Report') => {
     const w = window.open('', '_blank');
     if (!w) return;
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     const itemsToText = (items = []) => items.map((i) => `${i.qty}x ${i.name}`).join(', ');
     const bodyRows = rows.map((o) => `
       <tr>
@@ -336,13 +340,21 @@ export default function ManagerDashboard() {
     w.document.write(`<html><head><title>${title}</title><style>
       @page{size:A4;margin:14mm}
       body{font-family:Inter,Segoe UI,Arial,sans-serif;color:#0a0a0a}
+      .brand{display:flex;align-items:center;gap:12px;margin:0 0 10px}
+      .brand img{height:40px;width:auto;display:block}
       h1{font-size:18px;margin:0;font-weight:700}
       p{color:#525252;font-size:12px;margin:6px 0 14px}
       table{width:100%;border-collapse:collapse;font-size:11px}
       th,td{border-bottom:1px solid #e5e7eb;padding:8px;vertical-align:top;text-align:left}
       th{background:#fafafa;text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#525252}
     </style></head><body>
-      <h1>${restaurant?.name || 'Restaurant'} · ${title}</h1>
+      <div class="brand">
+        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        <div>
+          <h1>${restaurant?.name || 'Restaurant'} · ${title}</h1>
+          <div style="color:#6b7280;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Powered by Netrik</div>
+        </div>
+      </div>
       <p>Printed: ${new Date().toLocaleString()} · Rows: ${rows.length}</p>
       <table>
         <thead><tr><th>Date</th><th>Order</th><th>Table</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
@@ -355,27 +367,54 @@ export default function ManagerDashboard() {
 
   const downloadReceipt = (order) => {
     if (!order) return;
-    const lines = [
-      `${restaurant?.name || 'Restaurant'} Receipt`,
-      `Order: ${order.id}`,
-      `Table: ${order.tableNumber}`,
-      `Status: ${order.status}`,
-      `Payment: ${order.paymentStatus || 'unpaid'}`,
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
+    const details = [
       order.paymentReference ? `Reference: ${order.paymentReference}` : '',
       order.paymentProvider ? `Provider: ${order.paymentProvider}` : '',
       order.paymentMethod ? `Method: ${order.paymentMethod}` : '',
       order.paymentVpa ? `VPA: ${order.paymentVpa}` : '',
-      `Total: $${order.total.toFixed(2)}`,
-      `Created: ${new Date(order.createdAt).toLocaleString()}`,
-      '',
-      'Items:',
-      ...(order.items || []).map((i) => `- ${i.qty}x ${i.name} (${(i.price * i.qty).toFixed(2)})`),
     ].filter(Boolean);
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const itemsHtml = (order.items || []).map((i) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;">${i.qty}x</td>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;">${i.name}</td>
+        <td style="padding:8px 0;border-bottom:1px dashed #e5e7eb;text-align:right;">$${(i.price * i.qty).toFixed(2)}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Receipt ${order.id.slice(0, 8)}</title>
+      <style>
+        body{font-family:Inter,Segoe UI,Arial,sans-serif;padding:28px;color:#0a0a0a}
+        .brand{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+        .brand img{height:36px;width:auto}
+        h1{font-size:18px;margin:0}
+        .meta{color:#6b7280;font-size:12px;margin-top:4px}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+        th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;text-align:left;padding-bottom:6px}
+        td{vertical-align:top}
+        .total{font-size:16px;font-weight:700;margin-top:12px;text-align:right}
+      </style>
+    </head><body>
+      <div class="brand">
+        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        <div>
+          <h1>${restaurant?.name || 'Restaurant'} Receipt</h1>
+          <div class="meta">Order ${order.id.slice(0, 8).toUpperCase()} · Table ${order.tableNumber}</div>
+        </div>
+      </div>
+      <div class="meta">Status: ${order.status} · Payment: ${order.paymentStatus || 'unpaid'}</div>
+      <div class="meta">Created: ${new Date(order.createdAt).toLocaleString()}</div>
+      ${details.length ? details.map((d) => `<div class="meta">${d}</div>`).join('') : ''}
+      <table>
+        <thead><tr><th>Qty</th><th>Item</th><th style="text-align:right;">Total</th></tr></thead>
+        <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
+      </table>
+      <div class="total">Total: $${order.total.toFixed(2)}</div>
+      <div class="meta" style="margin-top:8px;">Powered by Netrik Shop</div>
+    </body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt-${order.id.slice(0, 8)}.txt`;
+    a.download = `receipt-${order.id.slice(0, 8)}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -392,9 +431,13 @@ export default function ManagerDashboard() {
   const printQR = (t) => {
     const w = window.open('', '_blank');
     if (!w) return;
+    const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     w.document.write(`<html><head><title>Table ${t.number} QR</title><style>body{font-family:Inter,system-ui;text-align:center;padding:48px;color:#0a0a0a}h1{font-size:30px;margin:0;font-weight:700;letter-spacing:-.02em}</style></head><body>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px;">
+        <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:42px;width:auto;" />
+        <div style="color:#525252;font-size:12px;letter-spacing:.2em;text-transform:uppercase">Powered by Netrik</div>
+      </div>
       <h1>${restaurant?.name || ''}</h1>
-      <p style="color:#525252">by Netrik Shop</p>
       <h2 style="margin:24px 0 6px;font-weight:600">Table ${t.number}</h2>
       <p style="color:#666">Scan to order</p>
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tableUrl(t))}" style="margin:16px auto"/>
@@ -406,7 +449,10 @@ export default function ManagerDashboard() {
   if (!me || !restaurant) {
     return (
       <div className="min-h-screen grid place-items-center bg-white text-neutral-500 text-sm">
-        Loading dashboard…
+        <div className="flex flex-col items-center gap-3">
+          <LoadingLogo className="h-12 w-12" alt="Loading dashboard" />
+          <div>Loading dashboard…</div>
+        </div>
       </div>
     );
   }
@@ -426,12 +472,12 @@ export default function ManagerDashboard() {
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
       <header className="border-b border-neutral-200/80 sticky top-0 bg-white/85 backdrop-blur-xl z-30">
-        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[6.75rem] flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-5 md:px-8 h-[5.5rem] flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {restaurant.logoUrl ? (
-              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-9 w-9 rounded-xl border border-neutral-200 object-cover" />
+              <img src={restaurant.logoUrl} alt={restaurant.name} className="h-11 w-11 rounded-xl border border-neutral-200 object-cover" />
             ) : (
-              <NetrikLogo className="h-[6.75rem] w-[6.75rem]" />
+              <NetrikLogo className="h-12 w-auto" />
             )}
             <div className="min-w-0">
               <div className="font-bold tracking-tight truncate">{restaurant.name}</div>
