@@ -79,9 +79,7 @@ const normalizeTagList = (input) => {
   }
   return out;
 };
-      preference: body.preference || '',
-      avoid: body.avoid || '',
-      notes: body.chefNotes || body.notes || '',
+
 const makeUpiReference = () => `UPI${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const buildUpiUri = ({ vpa, name, amount, reference }) => {
   const params = new URLSearchParams({
@@ -693,6 +691,9 @@ async function handleDemoRequest(path, method, request) {
       status: 'pending',
       allergy: body.allergy || '',
       spicy_level: body.spicyLevel || '',
+      preference: body.preference || '',
+      avoid: body.avoid || '',
+      notes: body.chefNotes || body.notes || '',
       paid_at: null,
       payment_status: 'unpaid',
       payment_reference: '',
