@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server';
-import { getSupabase, restaurantToApi, menuToApi, tableToApi, orderToApi } from '@/lib/supabase';
+import { randomBytes } from 'crypto';
+import {
+  getSupabase,
+  restaurantToApi,
+  restaurantToApiWithCreds,
+  menuToApi,
+  tableToApi,
+  orderToApi,
+} from '@/lib/supabase';
 import { llmChat, geminiWaiterChat } from '@/lib/llm';
 import { nluRespond } from '@/lib/nlu';
 import { sendRestaurantOnboardingEmail } from '@/lib/mailer';
+import {
+  readSession,
+  requireSession,
+  attachSession,
+  clearSession,
+} from '@/lib/auth';
 
 // Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
 async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language }) {
@@ -21,21 +35,20 @@ async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, 
 
 const json = (data, status = 200) => NextResponse.json(data, { status });
 const err = (message, status = 400) => NextResponse.json({ error: message }, { status });
+// Generic safe error: log details server-side, return opaque message to client.
+function safeErr(label, e, status = 500, msg = 'Server error') {
+  console.error('[api]', label, e?.message || e);
+  return NextResponse.json({ error: msg }, { status });
+}
 
 const slug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 18) || 'rest';
-const rand = (n = 4) => Math.random().toString(36).slice(2, 2 + n);
-const randPwd = () => Math.floor(100000 + Math.random() * 900000).toString();
-const DELETE_RESTAURANT_PASSWORD = 'harry';
-const SUPPORT_EMAIL = 'namasterides26@gmail.com';
-const SUPPORT_PHONE = '+1(656)214-5190';
+const rand = (n = 4) => randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n);
+// Strong default password: 12 url-safe chars from cryptographic randomness.
+const randPwd = () => randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@netrik.shop';
+const SUPPORT_PHONE = process.env.SUPPORT_PHONE || '';
 
-function stripJson(text) {
-  const m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (m) {
-    try { return { actions: JSON.parse(m[1]), reply: text.replace(m[0], '').trim() }; } catch {}
-  }
-  return { actions: null, reply: text };
-}
+const ALLOWED_ORDER_STATUSES = new Set(['pending', 'preparing', 'ready', 'served', 'paid', 'cancelled']);
 
 const DEMO_MENU_IMAGE = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
 const RANDOM_FOOD_IMAGES = [
@@ -51,7 +64,7 @@ const DEMO_DB_KEY = '_netrik_demo_db';
 const DEMO_MODE_ENABLED = String(process.env.NETRIK_DEMO_MODE || process.env.DEMO_MODE || '').toLowerCase() === 'true';
 
 const nowIso = () => new Date().toISOString();
-const makeId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+const makeId = (prefix) => `${prefix}_${randomBytes(6).toString('hex')}`;
 const escapeRegExp = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeImage = (image) => String(image || '').trim();
 
@@ -60,6 +73,14 @@ const DEMO_UPI_VPA = 'netrik@upi';
 const DEMO_UPI_AUTO_SETTLE_MS = 9000;
 
 const toAmount = (value) => Number.parseFloat(value || 0).toFixed(2);
+
+// Cap free-text fields to a sane upper bound so a malicious client cannot
+// post megabytes of data. Returned value is always a string.
+const clampStr = (v, max = 500) => {
+  if (v == null) return '';
+  const s = typeof v === 'string' ? v : String(v);
+  return s.slice(0, max);
+};
 
 // Normalize a tag list: accepts array or comma-separated string,
 // trims, lowercases, dedupes, caps to 8 entries × 24 chars each.
@@ -80,7 +101,7 @@ const normalizeTagList = (input) => {
   return out;
 };
 
-const makeUpiReference = () => `UPI${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+const makeUpiReference = () => `UPI${Date.now().toString(36).toUpperCase()}${randomBytes(3).toString('hex').toUpperCase()}`;
 const buildUpiUri = ({ vpa, name, amount, reference }) => {
   const params = new URLSearchParams({
     pa: vpa,
@@ -139,29 +160,55 @@ async function readJsonSafe(request) {
   }
 }
 
-async function assertDeletePassword(request) {
-  const body = await readJsonSafe(request);
-  if ((body.deletePassword || '').trim() !== DELETE_RESTAURANT_PASSWORD) {
-    return { ok: false, body };
-  }
-  return { ok: true, body };
-}
-
-function onboardingPayload(restaurant) {
-  if (!restaurant) return null;
+function onboardingPayload(restaurantWithCreds) {
+  if (!restaurantWithCreds) return null;
   return {
-    restaurantName: restaurant.name,
-    ownerName: restaurant.ownerName,
-    toEmail: restaurant.email,
-    subscription: restaurant.subscription,
-    domain: restaurant.domain,
-    address: restaurant.address,
-    contact: restaurant.contact,
-    managerCreds: restaurant.managerCreds,
-    chefCreds: restaurant.chefCreds,
+    restaurantName: restaurantWithCreds.name,
+    ownerName: restaurantWithCreds.ownerName,
+    toEmail: restaurantWithCreds.email,
+    subscription: restaurantWithCreds.subscription,
+    domain: restaurantWithCreds.domain,
+    address: restaurantWithCreds.address,
+    contact: restaurantWithCreds.contact,
+    managerCreds: restaurantWithCreds.managerCreds,
+    chefCreds: restaurantWithCreds.chefCreds,
     supportEmail: SUPPORT_EMAIL,
     supportPhone: SUPPORT_PHONE,
   };
+}
+
+// Build a session payload from a user record.
+const sessionForUser = (user) => {
+  const base = { type: user.type, userId: user.userId };
+  if (user.restaurantId) base.restaurantId = user.restaurantId;
+  if (user.serverId) base.serverId = user.serverId;
+  return base;
+};
+
+// Server-side total recalculation. NEVER trust client-supplied prices.
+// items: [{ id, qty, notes? }] from client; menu: rows from DB.
+function rebuildOrderItems(clientItems, menuRows) {
+  const menuById = new Map();
+  for (const m of menuRows) menuById.set(m.id, m);
+  const items = [];
+  let total = 0;
+  for (const raw of (clientItems || [])) {
+    const m = menuById.get(raw?.id);
+    if (!m) continue;                                  // ignore unknown items
+    if (m.available === false) continue;               // ignore unavailable
+    const qty = Math.max(1, Math.min(99, parseInt(raw?.qty, 10) || 1));
+    const price = parseFloat(m.price) || 0;
+    items.push({
+      id: m.id,
+      name: m.name,
+      nameEs: m.name_es || '',
+      price,
+      qty,
+      notes: clampStr(raw?.notes, 240),
+    });
+    total += price * qty;
+  }
+  return { items, total: Math.round(total * 100) / 100 };
 }
 
 function getDemoDb() {
@@ -270,92 +317,6 @@ function getDemoDb() {
   return global[DEMO_DB_KEY];
 }
 
-function buildDemoChatReply({ message = '', language = 'en', restaurantName = 'our restaurant', menu = [] }) {
-  const lower = message.toLowerCase();
-  const name = restaurantName || 'our restaurant';
-  const popularItems = menu.slice(0, 3).map((m) => m.name).filter(Boolean);
-  const popular = popularItems.length ? popularItems.join(', ') : 'today\'s chef specials';
-  const menuPreview = menu.slice(0, 6).map((m) => `${m.name} ($${Number(m.price || 0).toFixed(2)})`).join(', ');
-
-  if (/menu|show.*dish|what.*have|available/.test(lower)) {
-    if (language === 'es') {
-      return menuPreview
-        ? `Claro. En este momento tenemos: ${menuPreview}. También puedo mostrar el menu visual con fotos y videos. Dime cuál quieres y lo agrego por ti.`
-        : 'Ahora mismo no tengo el menu cargado. Intentalo de nuevo en unos segundos y te ayudo a pedir.';
-    }
-    return menuPreview
-      ? `Sure. Right now we have: ${menuPreview}. I can also show the visual menu with photos and videos. Tell me what you want and I will add it for you.`
-      : 'I do not have the menu loaded yet. Please try again in a few seconds and I will help you order.';
-  }
-
-  if (/recommend|suggest|special|popular|best/.test(lower)) {
-    return language === 'es'
-      ? `Te recomiendo ${popular}. Si quieres, te ayudo a elegir segun tu apetito o nivel de picante.`
-      : `I recommend ${popular}. If you want, I can tailor choices by appetite and spice level.`;
-  }
-
-  if (/hello|hi|hey|hola/.test(lower)) {
-    return language === 'es'
-      ? `Hola, bienvenido a ${name}. Dime que te apetece y te ayudo a pedir en segundos.`
-      : `Hi, welcome to ${name}. Tell me what you are craving and I will help you order quickly.`;
-  }
-
-  if (/place.*order|checkout|confirm.*order|submit.*order/.test(lower)) {
-    return language === 'es'
-      ? 'Perfecto, estoy confirmando tu pedido ahora mismo. Enseguida te comparto el ticket de cocina.'
-      : 'Perfect, I am confirming your order now. I will share your kitchen ticket right away.';
-  }
-
-  if (/pay|payment|bill|check/.test(lower)) {
-    return language === 'es'
-      ? 'Excelente, te ayudo con el pago con tarjeta ahora mismo.'
-      : 'Great, I will help you complete the card payment now.';
-  }
-
-  return language === 'es'
-    ? 'Perfecto. Puedo ayudarte a agregar platos, bebidas o postres. Dime qué quieres y yo me encargo del pedido.'
-    : 'Great choice. I can add mains, drinks, or desserts for you. Tell me what you want and I will handle the order.';
-}
-
-function extractDemoChatActions(message = '', menu = []) {
-  const lower = message.toLowerCase();
-  const actions = {};
-  const addItems = [];
-
-  for (const item of menu) {
-    const name = String(item.name || '').trim();
-    if (!name) continue;
-    const nameLower = name.toLowerCase();
-    if (!lower.includes(nameLower)) continue;
-
-    const qtyRegex = new RegExp(`(\\d+)\\s*(x|\\*)?\\s*${escapeRegExp(nameLower)}`);
-    const qtyMatch = lower.match(qtyRegex);
-    const quantity = Math.max(1, parseInt(qtyMatch?.[1] || '1', 10));
-    addItems.push({ id: item.id, name: item.name, quantity });
-  }
-
-  if (addItems.length) actions.add_items = addItems;
-
-  if (/extra[- ]?hot/.test(lower)) actions.set_preference = 'Spice: extra-hot';
-  else if (/\bhot\b|picante/.test(lower)) actions.set_preference = 'Spice: hot';
-  else if (/\bmedium\b|medio/.test(lower)) actions.set_preference = 'Spice: medium';
-  else if (/\bmild\b|suave|no spicy/.test(lower)) actions.set_preference = 'Spice: mild';
-
-  if (/allergy|allergic|alerg/.test(lower)) {
-    actions.set_allergy = message.slice(0, 120).trim();
-  }
-
-  if (/(place|submit|send|confirm).*(order|pedido)|checkout/.test(lower)) {
-    actions.place_order = true;
-  }
-
-  if (/(pay|payment|charge|pagar|cobrar|card|stripe)/.test(lower)) {
-    actions.pay_now = true;
-  }
-
-  return Object.keys(actions).length ? actions : null;
-}
-
 async function handleDemoRequest(path, method, request) {
   const db = getDemoDb();
 
@@ -367,21 +328,21 @@ async function handleDemoRequest(path, method, request) {
     if (type === 'central') {
       const data = db.users.find((u) => u.type === 'central' && u.user_id === userId && u.password === password);
       if (!data) return err('Invalid credentials', 401);
-      return json({ user: { id: data.id, type: 'central', userId: data.user_id, demoMode: true } });
+      const user = { id: data.id, type: 'central', userId: data.user_id, demoMode: true };
+      return attachSession(json({ user }), sessionForUser(user));
     }
 
     if (type === 'server') {
       const srv = (db.servers || []).find((s) => s.user_id === userId && s.password === password);
       if (!srv) return err('Invalid credentials', 401);
       const rest = db.restaurants.find((r) => r.id === srv.restaurant_id);
-      return json({
-        user: {
-          type: 'server', userId, serverId: srv.id, serverName: srv.name,
-          restaurantId: srv.restaurant_id, restaurantName: rest?.name,
-          assignedTableIds: srv.assigned_table_ids || [],
-          demoMode: true,
-        },
-      });
+      const user = {
+        type: 'server', userId, serverId: srv.id, serverName: srv.name,
+        restaurantId: srv.restaurant_id, restaurantName: rest?.name,
+        assignedTableIds: srv.assigned_table_ids || [],
+        demoMode: true,
+      };
+      return attachSession(json({ user }), sessionForUser(user));
     }
 
     const rest = db.restaurants.find((r) => (
@@ -389,14 +350,15 @@ async function handleDemoRequest(path, method, request) {
       (type === 'chef' && r.chef_user_id === userId && r.chef_password === password)
     ));
     if (!rest) return err('Invalid credentials', 401);
-    return json({ user: { type, userId, restaurantId: rest.id, restaurantName: rest.name, demoMode: true } });
+    const user = { type, userId, restaurantId: rest.id, restaurantName: rest.name, demoMode: true };
+    return attachSession(json({ user }), sessionForUser(user));
   }
 
   // ============ SERVER (waiter) ENDPOINTS ============
   if (path === 'server/me' && method === 'GET') {
-    const url = new URL(request.url);
-    const sid = url.searchParams.get('serverId');
-    const srv = (db.servers || []).find((s) => s.id === sid);
+    const session = readSession(request);
+    if (!session || session.type !== 'server') return err('Unauthorized', 401);
+    const srv = (db.servers || []).find((s) => s.id === session.serverId);
     if (!srv) return err('Not found', 404);
     const tables = (db.rest_tables || []).filter((t) => (srv.assigned_table_ids || []).includes(t.id));
     const rest = db.restaurants.find((r) => r.id === srv.restaurant_id);
@@ -407,9 +369,9 @@ async function handleDemoRequest(path, method, request) {
   }
 
   if (path === 'server/orders' && method === 'GET') {
-    const url = new URL(request.url);
-    const sid = url.searchParams.get('serverId');
-    const srv = (db.servers || []).find((s) => s.id === sid);
+    const session = readSession(request);
+    if (!session || session.type !== 'server') return err('Unauthorized', 401);
+    const srv = (db.servers || []).find((s) => s.id === session.serverId);
     if (!srv) return err('Not found', 404);
     const assigned = new Set(srv.assigned_table_ids || []);
     const orders = (db.orders || [])
@@ -421,11 +383,15 @@ async function handleDemoRequest(path, method, request) {
 
   // ============ RESTAURANTS ============
   if (path === 'restaurants' && method === 'GET') {
+    const guard = requireSession(request, { roles: ['central'] });
+    if (!guard.ok) return guard.response;
     const restaurants = [...db.restaurants].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    return json({ restaurants: restaurants.map(restaurantToApi) });
+    return json({ restaurants: restaurants.map(restaurantToApiWithCreds) });
   }
 
   if (path === 'restaurants' && method === 'POST') {
+    const guard = requireSession(request, { roles: ['central'] });
+    if (!guard.ok) return guard.response;
     const body = await request.json();
     if (!body.name || !body.ownerName || !body.contact || !body.email) return err('Missing required fields');
 
@@ -434,14 +400,14 @@ async function handleDemoRequest(path, method, request) {
     const restaurantId = makeId('rest');
     const row = {
       id: restaurantId,
-      name: body.name,
-      owner_name: body.ownerName,
-      email: body.email,
-      contact: body.contact,
-      address: body.address || '',
-      domain: body.domain || '',
-      logo_url: body.logoUrl || '',
-      subscription: body.subscription || 'Pro',
+      name: clampStr(body.name, 120),
+      owner_name: clampStr(body.ownerName, 120),
+      email: clampStr(body.email, 200),
+      contact: clampStr(body.contact, 40),
+      address: clampStr(body.address, 240),
+      domain: clampStr(body.domain, 120),
+      logo_url: clampStr(body.logoUrl, 500),
+      subscription: clampStr(body.subscription || 'Pro', 40),
       manager_user_id: 'manager_' + s,
       manager_password: randPwd(),
       chef_user_id: 'chef_' + s,
@@ -452,57 +418,25 @@ async function handleDemoRequest(path, method, request) {
     db.restaurants.push(row);
 
     // Create 4 default server accounts for the restaurant
-    const server1 = {
+    const servers = ['Server 1', 'Server 2', 'Server 3', 'Server 4'].map((name, i) => ({
       id: makeId('srv'),
       restaurant_id: restaurantId,
-      name: 'Server 1',
-      user_id: 'server1_' + s,
+      name,
+      user_id: `server${i + 1}_${s}`,
       password: randPwd(),
       assigned_table_ids: [],
       created_at: ts,
-    };
-    const server2 = {
-      id: makeId('srv'),
-      restaurant_id: restaurantId,
-      name: 'Server 2',
-      user_id: 'server2_' + s,
-      password: randPwd(),
-      assigned_table_ids: [],
-      created_at: ts,
-    };
-    const server3 = {
-      id: makeId('srv'),
-      restaurant_id: restaurantId,
-      name: 'Server 3',
-      user_id: 'server3_' + s,
-      password: randPwd(),
-      assigned_table_ids: [],
-      created_at: ts,
-    };
-    const server4 = {
-      id: makeId('srv'),
-      restaurant_id: restaurantId,
-      name: 'Server 4',
-      user_id: 'server4_' + s,
-      password: randPwd(),
-      assigned_table_ids: [],
-      created_at: ts,
-    };
+    }));
     if (!db.servers) db.servers = [];
-    db.servers.push(server1, server2, server3, server4);
+    db.servers.push(...servers);
 
-    const restaurant = restaurantToApi(row);
+    const restaurant = restaurantToApiWithCreds(row);
     const onboardingData = {
       ...onboardingPayload(restaurant),
-      serverCreds: [
-        { name: server1.name, userId: server1.user_id, password: server1.password },
-        { name: server2.name, userId: server2.user_id, password: server2.password },
-        { name: server3.name, userId: server3.user_id, password: server3.password },
-        { name: server4.name, userId: server4.user_id, password: server4.password },
-      ],
+      serverCreds: servers.map((sv) => ({ name: sv.name, userId: sv.user_id, password: sv.password })),
     };
-    sendRestaurantOnboardingEmail(onboardingData).catch(e => console.error('SMTP Background Error:', e));
-    return json({ restaurant, servers: [server1, server2, server3, server4], mailStatus: 'sent_to_background' });
+    sendRestaurantOnboardingEmail(onboardingData).catch((e) => console.error('SMTP Background Error:', e?.message || e));
+    return json({ restaurant, servers, mailStatus: 'sent_to_background' });
   }
 
   const restMatch = path.match(/^restaurants\/([^\/]+)$/);
@@ -510,29 +444,41 @@ async function handleDemoRequest(path, method, request) {
     const id = restMatch[1];
     const idx = db.restaurants.findIndex((r) => r.id === id);
     if (idx === -1) return err('Not found', 404);
+    const session = readSession(request);
 
     if (method === 'GET') {
-      return json({ restaurant: restaurantToApi(db.restaurants[idx]) });
+      // Public read: never expose credentials. Central or owner gets the
+      // cred-bearing view.
+      const isPrivilegedViewer = session && (session.type === 'central' || (session.restaurantId === id && session.type === 'manager'));
+      const mapper = isPrivilegedViewer ? restaurantToApiWithCreds : restaurantToApi;
+      return json({ restaurant: mapper(db.restaurants[idx]) });
     }
 
     if (method === 'PUT') {
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: id });
+      if (!guard.ok) return guard.response;
       const body = await request.json();
       const row = db.restaurants[idx];
-      if (body.name !== undefined) row.name = body.name;
-      if (body.ownerName !== undefined) row.owner_name = body.ownerName;
-      if (body.email !== undefined) row.email = body.email;
-      if (body.contact !== undefined) row.contact = body.contact;
-      if (body.address !== undefined) row.address = body.address;
-      if (body.domain !== undefined) row.domain = body.domain;
-      if (body.logoUrl !== undefined) row.logo_url = body.logoUrl;
-      if (body.subscription !== undefined) row.subscription = body.subscription;
+      if (body.name !== undefined) row.name = clampStr(body.name, 120);
+      if (body.ownerName !== undefined) row.owner_name = clampStr(body.ownerName, 120);
+      if (body.email !== undefined) row.email = clampStr(body.email, 200);
+      if (body.contact !== undefined) row.contact = clampStr(body.contact, 40);
+      if (body.address !== undefined) row.address = clampStr(body.address, 240);
+      if (body.domain !== undefined) row.domain = clampStr(body.domain, 120);
+      if (body.logoUrl !== undefined) row.logo_url = clampStr(body.logoUrl, 500);
+      // Only central can change subscription plan.
+      if (body.subscription !== undefined && guard.session.type === 'central') {
+        row.subscription = clampStr(body.subscription, 40);
+      }
       row.updated_at = nowIso();
-      return json({ restaurant: restaurantToApi(row) });
+      const isCentral = guard.session.type === 'central';
+      const mapper = isCentral ? restaurantToApiWithCreds : restaurantToApi;
+      return json({ restaurant: mapper(row) });
     }
 
     if (method === 'DELETE') {
-      const auth = await assertDeletePassword(request);
-      if (!auth.ok) return err('Delete password is incorrect', 403);
+      const guard = requireSession(request, { roles: ['central'] });
+      if (!guard.ok) return guard.response;
       db.restaurants.splice(idx, 1);
       db.menu = db.menu.filter((m) => m.restaurant_id !== id);
       db.rest_tables = db.rest_tables.filter((t) => t.restaurant_id !== id);
@@ -557,16 +503,20 @@ async function handleDemoRequest(path, method, request) {
 
   if (path === 'menu' && method === 'POST') {
     const body = await request.json();
+    const targetRestaurantId = body.restaurantId;
+    if (!targetRestaurantId) return err('restaurantId is required');
+    const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: targetRestaurantId });
+    if (!guard.ok) return guard.response;
     const row = {
       id: makeId('menu'),
-      restaurant_id: body.restaurantId,
-      name: body.name,
-      name_es: body.nameEs || '',
-      description: body.description || '',
+      restaurant_id: targetRestaurantId,
+      name: clampStr(body.name, 120),
+      name_es: clampStr(body.nameEs, 120),
+      description: clampStr(body.description, 500),
       price: parseFloat(body.price) || 0,
-      category: body.category || 'Mains',
+      category: clampStr(body.category || 'Mains', 40),
       image: normalizeImage(body.image) || getRandomFoodImage(),
-      video_url: String(body.videoUrl || '').trim(),
+      video_url: clampStr(String(body.videoUrl || '').trim(), 500),
       available: body.available !== false,
       mood_tags: normalizeTagList(body.moodTags),
       taste_tags: normalizeTagList(body.tasteTags),
@@ -582,18 +532,21 @@ async function handleDemoRequest(path, method, request) {
     const id = menuMatch[1];
     const idx = db.menu.findIndex((m) => m.id === id);
     if (idx === -1) return err('Not found', 404);
+    const itemRestaurantId = db.menu[idx].restaurant_id;
+    const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: itemRestaurantId });
+    if (!guard.ok) return guard.response;
 
     if (method === 'PUT') {
       const body = await request.json();
       const row = db.menu[idx];
-      if (body.name !== undefined) row.name = body.name;
-      if (body.description !== undefined) row.description = body.description;
+      if (body.name !== undefined) row.name = clampStr(body.name, 120);
+      if (body.description !== undefined) row.description = clampStr(body.description, 500);
       if (body.price !== undefined) row.price = parseFloat(body.price);
-      if (body.category !== undefined) row.category = body.category;
+      if (body.category !== undefined) row.category = clampStr(body.category, 40);
       if (body.image !== undefined) row.image = normalizeImage(body.image) || getRandomFoodImage();
-      if (body.videoUrl !== undefined) row.video_url = String(body.videoUrl || '').trim();
+      if (body.videoUrl !== undefined) row.video_url = clampStr(String(body.videoUrl || '').trim(), 500);
       if (body.available !== undefined) row.available = body.available;
-      if (body.nameEs !== undefined) row.name_es = body.nameEs;
+      if (body.nameEs !== undefined) row.name_es = clampStr(body.nameEs, 120);
       if (body.moodTags !== undefined) row.mood_tags = normalizeTagList(body.moodTags);
       if (body.tasteTags !== undefined) row.taste_tags = normalizeTagList(body.tasteTags);
       if (body.dietaryTags !== undefined) row.dietary_tags = normalizeTagList(body.dietaryTags);
@@ -618,11 +571,15 @@ async function handleDemoRequest(path, method, request) {
 
   if (path === 'tables' && method === 'POST') {
     const body = await request.json();
+    const targetRestaurantId = body.restaurantId;
+    if (!targetRestaurantId) return err('restaurantId is required');
+    const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: targetRestaurantId });
+    if (!guard.ok) return guard.response;
     const row = {
       id: makeId('table'),
-      restaurant_id: body.restaurantId,
-      number: String(body.number),
-      seats: parseInt(body.seats, 10) || 2,
+      restaurant_id: targetRestaurantId,
+      number: clampStr(String(body.number), 16),
+      seats: Math.max(1, Math.min(64, parseInt(body.seats, 10) || 2)),
       status: 'available',
       created_at: nowIso(),
     };
@@ -635,17 +592,20 @@ async function handleDemoRequest(path, method, request) {
     const id = tblMatch[1];
     const idx = db.rest_tables.findIndex((t) => t.id === id);
     if (idx === -1) return err('Not found', 404);
-
     if (method === 'GET') {
+      // Public: customers landing via QR need table info to render their page.
       return json({ table: tableToApi(db.rest_tables[idx]) });
     }
+    const tableRestaurantId = db.rest_tables[idx].restaurant_id;
+    const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: tableRestaurantId });
+    if (!guard.ok) return guard.response;
 
     if (method === 'PUT') {
       const body = await request.json();
       const row = db.rest_tables[idx];
-      if (body.number !== undefined) row.number = String(body.number);
-      if (body.seats !== undefined) row.seats = parseInt(body.seats, 10);
-      if (body.status !== undefined) row.status = body.status;
+      if (body.number !== undefined) row.number = clampStr(String(body.number), 16);
+      if (body.seats !== undefined) row.seats = Math.max(1, Math.min(64, parseInt(body.seats, 10) || 2));
+      if (body.status !== undefined) row.status = clampStr(body.status, 24);
       return json({ ok: true });
     }
 
@@ -659,6 +619,9 @@ async function handleDemoRequest(path, method, request) {
   if (path === 'orders' && method === 'GET') {
     const url = new URL(request.url);
     const restaurantId = url.searchParams.get('restaurantId');
+    if (!restaurantId) return err('restaurantId is required');
+    const guard = requireSession(request, { roles: ['central', 'manager', 'chef', 'server'], restaurantId });
+    if (!guard.ok) return guard.response;
     const orders = db.orders
       .filter((o) => o.restaurant_id === restaurantId)
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -667,33 +630,30 @@ async function handleDemoRequest(path, method, request) {
   }
 
   if (path === 'orders' && method === 'POST') {
+    // Public: customers at a table create orders without logging in.
     const body = await request.json();
     const tbl = db.rest_tables.find((t) => t.id === body.tableId);
     if (!tbl) return err('Invalid table');
+    if (body.restaurantId && tbl.restaurant_id !== body.restaurantId) return err('Invalid table');
 
-    const items = (body.items || []).map((i) => ({
-      id: i.id,
-      name: i.name,
-      nameEs: i.nameEs || '',
-      price: parseFloat(i.price),
-      qty: parseInt(i.qty, 10) || 1,
-      notes: i.notes || '',
-    }));
-    const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const restaurantMenu = db.menu.filter((m) => m.restaurant_id === tbl.restaurant_id);
+    const { items, total } = rebuildOrderItems(body.items, restaurantMenu);
+    if (!items.length) return err('No valid items in order');
+
     const ts = nowIso();
     const row = {
       id: makeId('ord'),
-      restaurant_id: body.restaurantId,
+      restaurant_id: tbl.restaurant_id,
       table_id: body.tableId,
       table_number: tbl.number,
       items,
       total,
       status: 'pending',
-      allergy: body.allergy || '',
-      spicy_level: body.spicyLevel || '',
-      preference: body.preference || '',
-      avoid: body.avoid || '',
-      notes: body.chefNotes || body.notes || '',
+      allergy: clampStr(body.allergy, 240),
+      spicy_level: clampStr(body.spicyLevel, 40),
+      preference: clampStr(body.preference, 240),
+      avoid: clampStr(body.avoid, 240),
+      notes: clampStr(body.chefNotes || body.notes, 240),
       paid_at: null,
       payment_status: 'unpaid',
       payment_reference: '',
@@ -715,25 +675,25 @@ async function handleDemoRequest(path, method, request) {
     const id = orderMatch[1];
     const idx = db.orders.findIndex((o) => o.id === id);
     if (idx === -1) return err('Not found', 404);
+    const row = db.orders[idx];
 
     if (method === 'GET') {
-      return json({ order: orderToApi(db.orders[idx]) });
+      // Public read of own order is needed by the customer page.
+      return json({ order: orderToApi(row) });
     }
 
     if (method === 'PUT') {
+      const guard = requireSession(request, { roles: ['central', 'manager', 'chef', 'server'], restaurantId: row.restaurant_id });
+      if (!guard.ok) return guard.response;
       const body = await request.json();
-      const row = db.orders[idx];
-      if (body.status) row.status = body.status;
-      row.updated_at = nowIso();
-      if (body.status === 'paid') {
-        row.payment_status = 'paid';
-        row.payment_reference = row.payment_reference || makeUpiReference();
-        row.payment_provider = row.payment_provider || 'manual';
-        row.payment_method = row.payment_method || 'cash';
-        row.paid_at = row.paid_at || nowIso();
-        const table = db.rest_tables.find((t) => t.id === row.table_id);
-        if (table) table.status = 'available';
+      if (body.status) {
+        if (!ALLOWED_ORDER_STATUSES.has(body.status)) return err('Invalid status');
+        // Direct 'paid' transitions must go through /payment/* endpoints so a
+        // payment reference is recorded.
+        if (body.status === 'paid') return err("Use /payment/* endpoints to mark an order paid", 400);
+        row.status = body.status;
       }
+      row.updated_at = nowIso();
       return json({ ok: true });
     }
   }
@@ -743,26 +703,19 @@ async function handleDemoRequest(path, method, request) {
     const id = addonsMatch[1];
     const row = db.orders.find((o) => o.id === id);
     if (!row) return err('Not found', 404);
+    if (row.payment_status === 'paid' || row.status === 'paid') return err('Order is closed', 409);
 
-    const items = [...(row.items || [])];
+    const restaurantMenu = db.menu.filter((m) => m.restaurant_id === row.restaurant_id);
     const incoming = await request.json();
-    for (const it of (incoming.items || [])) {
+    const { items: addItems } = rebuildOrderItems(incoming.items, restaurantMenu);
+    const items = [...(row.items || [])];
+    for (const it of addItems) {
       const ex = items.find((x) => x.id === it.id);
-      if (ex) ex.qty += parseInt(it.qty, 10) || 1;
-      else {
-        items.push({
-          id: it.id,
-          name: it.name,
-          nameEs: it.nameEs || '',
-          price: parseFloat(it.price),
-          qty: parseInt(it.qty, 10) || 1,
-          notes: it.notes || '',
-          isAdditional: true,
-        });
-      }
+      if (ex) ex.qty = Math.min(99, ex.qty + it.qty);
+      else items.push({ ...it, isAdditional: true });
     }
     row.items = items;
-    row.total = items.reduce((sum, i) => sum + parseFloat(i.price) * i.qty, 0);
+    row.total = Math.round(items.reduce((sum, i) => sum + i.price * i.qty, 0) * 100) / 100;
     row.status = row.status === 'served' ? 'preparing' : row.status;
     row.updated_at = nowIso();
     return json({ order: orderToApi(row) });
@@ -811,13 +764,14 @@ async function handleDemoRequest(path, method, request) {
   // ============ FEEDBACK ============
   if (path === 'feedback' && method === 'POST') {
     const body = await request.json();
+    const rating = parseInt(body.rating, 10);
     db.feedback.push({
       id: makeId('fb'),
       restaurant_id: body.restaurantId,
       table_id: body.tableId,
       order_id: body.orderId,
-      rating: parseInt(body.rating, 10) || null,
-      comment: body.comment || '',
+      rating: Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null,
+      comment: clampStr(body.comment, 1000),
       created_at: nowIso(),
     });
     return json({ ok: true });
@@ -826,20 +780,27 @@ async function handleDemoRequest(path, method, request) {
   // ============ SUPPORT MESSAGES ============
   if (!db.support_messages) db.support_messages = [];
   if (path === 'support' && method === 'GET') {
+    const guard = requireSession(request, { roles: ['central', 'manager'] });
+    if (!guard.ok) return guard.response;
     const url = new URL(request.url);
     const restaurantId = url.searchParams.get('restaurantId');
-    const msgs = restaurantId ? db.support_messages.filter(m => m.restaurant_id === restaurantId) : db.support_messages;
-    return json({ messages: msgs.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at)) });
+    const scopedId = guard.session.type === 'central' ? restaurantId : guard.session.restaurantId;
+    const msgs = scopedId ? db.support_messages.filter((m) => m.restaurant_id === scopedId) : db.support_messages;
+    return json({ messages: msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) });
   }
   if (path === 'support' && method === 'POST') {
+    const guard = requireSession(request, { roles: ['central', 'manager'] });
+    if (!guard.ok) return guard.response;
     const body = await request.json();
+    const scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+    if (!scopedId) return err('restaurantId is required');
     const msg = {
       id: makeId('msg'),
-      restaurant_id: body.restaurantId,
-      sender: body.sender || 'restaurant',
-      message: body.message,
+      restaurant_id: scopedId,
+      sender: clampStr(body.sender || 'restaurant', 40),
+      message: clampStr(body.message, 2000),
       read: false,
-      created_at: nowIso()
+      created_at: nowIso(),
     };
     db.support_messages.push(msg);
     return json({ message: msg });
@@ -849,6 +810,9 @@ async function handleDemoRequest(path, method, request) {
   if (path === 'analytics' && method === 'GET') {
     const url = new URL(request.url);
     const restaurantId = url.searchParams.get('restaurantId');
+    if (!restaurantId) return err('restaurantId is required');
+    const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId });
+    if (!guard.ok) return guard.response;
     const orders = db.orders.filter((o) => o.restaurant_id === restaurantId && o.status !== 'cancelled');
 
     const today = new Date();
@@ -893,6 +857,8 @@ async function handleDemoRequest(path, method, request) {
 
   // ============ CENTRAL STATS ============
   if (path === 'central/stats' && method === 'GET') {
+    const guard = requireSession(request, { roles: ['central'] });
+    if (!guard.ok) return guard.response;
     const restaurants = db.restaurants;
     const orders = db.orders.filter((o) => o.status !== 'cancelled');
     const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total), 0);
@@ -924,18 +890,34 @@ async function handleDemoRequest(path, method, request) {
   // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
   if (path === 'chat' && method === 'POST') {
     const body = await request.json();
-    const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', preference = '', avoid = '', chefNotes = '', stage = 'browsing' } = body;
+    const {
+      sessionId, restaurantId, tableId, language = 'en',
+      message = '', menu = [], cart = [], allergy = '', preference = '',
+      avoid = '', chefNotes = '', stage = 'browsing',
+    } = body;
     const restaurant = db.restaurants.find((r) => r.id === restaurantId);
 
     const idx = db.chat_sessions.findIndex((s) => s.session_id === sessionId);
     const prev = idx >= 0 ? db.chat_sessions[idx] : { history: [] };
 
     const { reply, actions } = await aiWaiterReply({
-      message, menu, cart, allergy, preference, avoid, notes: chefNotes, stage,
-      restaurantName: restaurant?.name, history: prev.history || [], language,
+      message: clampStr(message, 2000),
+      menu, cart,
+      allergy: clampStr(allergy, 240),
+      preference: clampStr(preference, 240),
+      avoid: clampStr(avoid, 240),
+      notes: clampStr(chefNotes, 240),
+      stage,
+      restaurantName: restaurant?.name,
+      history: prev.history || [],
+      language,
     });
 
-    const newHistory = [...(prev.history || []), { role: 'user', content: message }, { role: 'assistant', content: reply }].slice(-30);
+    const newHistory = [
+      ...(prev.history || []),
+      { role: 'user', content: message },
+      { role: 'assistant', content: reply },
+    ].slice(-30);
     const row = { session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, updated_at: nowIso() };
     if (idx >= 0) db.chat_sessions[idx] = row;
     else db.chat_sessions.push(row);
@@ -954,6 +936,18 @@ async function handleDemoRequest(path, method, request) {
 async function handler(request, { params }) {
   const path = (params?.path || []).join('/');
   const method = request.method;
+
+  // Stateless auth endpoints that don't need a DB.
+  if (path === 'auth/logout' && method === 'POST') {
+    return clearSession(json({ ok: true }));
+  }
+  if (path === 'auth/me' && method === 'GET') {
+    const session = readSession(request);
+    if (!session) return err('Unauthorized', 401);
+    const { exp: _exp, ...user } = session;
+    return json({ user });
+  }
+
   let sb;
   let sbError = null;
   try { sb = getSupabase(); }
@@ -963,7 +957,7 @@ async function handler(request, { params }) {
     if (DEMO_MODE_ENABLED) {
       return handleDemoRequest(path, method, request);
     }
-    return err(`Database not configured: ${sbError?.message || 'unknown error'}`, 500);
+    return safeErr('supabase not configured', sbError, 500, 'Database not configured');
   }
 
   try {
@@ -973,32 +967,31 @@ async function handler(request, { params }) {
       if (!type || !userId || !password) return err('Missing fields');
       if (type === 'central') {
         const { data, error } = await sb.from('users').select('*').eq('type', 'central').eq('user_id', userId).eq('password', password).maybeSingle();
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('login central', error);
         if (!data) return err('Invalid credentials', 401);
-        return json({ user: { id: data.id, type: 'central', userId: data.user_id } });
+        const user = { id: data.id, type: 'central', userId: data.user_id };
+        return attachSession(json({ user }), sessionForUser(user));
       }
       if (type === 'server') {
-        // Try Supabase first, fall back to demo
         let data = null;
-        let error = null;
+        let lookupError = null;
         try {
           const r = await sb.from('servers').select('*').eq('user_id', userId).eq('password', password).maybeSingle();
           data = r.data;
-          error = r.error;
+          lookupError = r.error;
         } catch (e) {
-          error = { code: 'NO_TABLE', message: e?.message || 'servers table missing' };
+          lookupError = { code: 'NO_TABLE', message: e?.message || 'servers table missing' };
         }
         if (data) {
           const { data: rest } = await sb.from('restaurants').select('id,name').eq('id', data.restaurant_id).maybeSingle();
-          return json({
-            user: {
-              type: 'server', userId, serverId: data.id, serverName: data.name,
-              restaurantId: data.restaurant_id, restaurantName: rest?.name,
-              assignedTableIds: data.assigned_table_ids || [],
-            },
-          });
+          const user = {
+            type: 'server', userId, serverId: data.id, serverName: data.name,
+            restaurantId: data.restaurant_id, restaurantName: rest?.name,
+            assignedTableIds: data.assigned_table_ids || [],
+          };
+          return attachSession(json({ user }), sessionForUser(user));
         }
-        if (DEMO_MODE_ENABLED || (error && (error.code === '42P01' || error.code === 'NO_TABLE'))) {
+        if (DEMO_MODE_ENABLED || (lookupError && (lookupError.code === '42P01' || lookupError.code === 'NO_TABLE'))) {
           return handleDemoRequest(path, method, request);
         }
         return err('Invalid credentials', 401);
@@ -1007,16 +1000,18 @@ async function handler(request, { params }) {
       const passField = type === 'manager' ? 'manager_password' : type === 'chef' ? 'chef_password' : null;
       if (!field) return err('Invalid type');
       const { data, error } = await sb.from('restaurants').select('*').eq(field, userId).eq(passField, password).maybeSingle();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('login restaurant', error);
       if (!data) return err('Invalid credentials', 401);
-      return json({ user: { type, userId, restaurantId: data.id, restaurantName: data.name } });
+      const user = { type, userId, restaurantId: data.id, restaurantName: data.name };
+      return attachSession(json({ user }), sessionForUser(user));
     }
 
-    // ============ SERVER (waiter) ENDPOINTS — fall back to demo for cleaner experience ============
+    // ============ SERVER (waiter) ENDPOINTS ============
     if ((path === 'server/me' || path === 'server/orders') && method === 'GET') {
+      const session = readSession(request);
+      if (!session || session.type !== 'server') return err('Unauthorized', 401);
       try {
-        const url = new URL(request.url);
-        const sid = url.searchParams.get('serverId');
+        const sid = session.serverId;
         const { data: srv } = await sb.from('servers').select('*').eq('id', sid).maybeSingle();
         if (srv) {
           if (path === 'server/me') {
@@ -1034,43 +1029,44 @@ async function handler(request, { params }) {
         }
       } catch (_) { /* fall through to demo */ }
       if (DEMO_MODE_ENABLED) return handleDemoRequest(path, method, request);
-      return err('Server endpoints require demo mode or a `servers` table', 404);
+      return err('Server endpoints require a `servers` table', 404);
     }
 
     // ============ RESTAURANTS ============
     if (path === 'restaurants' && method === 'GET') {
+      const guard = requireSession(request, { roles: ['central'] });
+      if (!guard.ok) return guard.response;
       const { data, error } = await sb.from('restaurants').select('*').order('created_at', { ascending: false });
-      if (error) return err(error.message, 500);
-      return json({ restaurants: (data || []).map(restaurantToApi) });
+      if (error) return safeErr('restaurants list', error);
+      return json({ restaurants: (data || []).map(restaurantToApiWithCreds) });
     }
     if (path === 'restaurants' && method === 'POST') {
+      const guard = requireSession(request, { roles: ['central'] });
+      if (!guard.ok) return guard.response;
       const body = await request.json();
       if (!body.name || !body.ownerName || !body.contact || !body.email) return err('Missing required fields');
       const s = slug(body.name) + '_' + rand(4);
       const row = {
-        name: body.name,
-        owner_name: body.ownerName,
-        email: body.email,
-        contact: body.contact,
-        address: body.address || '',
-        domain: body.domain || '',
-        logo_url: body.logoUrl || '',
-        subscription: body.subscription || 'Pro',
+        name: clampStr(body.name, 120),
+        owner_name: clampStr(body.ownerName, 120),
+        email: clampStr(body.email, 200),
+        contact: clampStr(body.contact, 40),
+        address: clampStr(body.address, 240),
+        domain: clampStr(body.domain, 120),
+        logo_url: clampStr(body.logoUrl, 500),
+        subscription: clampStr(body.subscription || 'Pro', 40),
         manager_user_id: 'manager_' + s,
         manager_password: randPwd(),
         chef_user_id: 'chef_' + s,
         chef_password: randPwd(),
       };
       const { data, error } = await sb.from('restaurants').insert(row).select('*').single();
-      if (error) return err(error.message, 500);
-      
+      if (error) return safeErr('restaurants insert', error);
+
       // Create 4 default server accounts for the restaurant
-      const servers = [
-        { restaurant_id: data.id, name: 'Server 1', user_id: 'server1_' + s, password: randPwd(), assigned_table_ids: [] },
-        { restaurant_id: data.id, name: 'Server 2', user_id: 'server2_' + s, password: randPwd(), assigned_table_ids: [] },
-        { restaurant_id: data.id, name: 'Server 3', user_id: 'server3_' + s, password: randPwd(), assigned_table_ids: [] },
-        { restaurant_id: data.id, name: 'Server 4', user_id: 'server4_' + s, password: randPwd(), assigned_table_ids: [] },
-      ];
+      const servers = ['Server 1', 'Server 2', 'Server 3', 'Server 4'].map((name, i) => ({
+        restaurant_id: data.id, name, user_id: `server${i + 1}_${s}`, password: randPwd(), assigned_table_ids: [],
+      }));
       let serverData = null;
       try {
         const r = await sb.from('servers').insert(servers).select('*');
@@ -1078,45 +1074,52 @@ async function handler(request, { params }) {
       } catch (e) {
         console.error('Server account insert failed (table may not exist):', e?.message || e);
       }
-      
-      const restaurant = restaurantToApi(data);
+
+      const restaurant = restaurantToApiWithCreds(data);
       const onboardingData = {
         ...onboardingPayload(restaurant),
-        serverCreds: servers.map(s => ({ name: s.name, userId: s.user_id, password: s.password })),
+        serverCreds: servers.map((sv) => ({ name: sv.name, userId: sv.user_id, password: sv.password })),
       };
-      sendRestaurantOnboardingEmail(onboardingData).catch(e => console.error('SMTP Background Error:', e));
+      sendRestaurantOnboardingEmail(onboardingData).catch((e) => console.error('SMTP Background Error:', e?.message || e));
       return json({ restaurant, servers: serverData || servers, mailStatus: 'sent_to_background' });
     }
     const restMatch = path.match(/^restaurants\/([^\/]+)$/);
     if (restMatch) {
       const id = restMatch[1];
+      const session = readSession(request);
       if (method === 'GET') {
         const { data, error } = await sb.from('restaurants').select('*').eq('id', id).maybeSingle();
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('restaurant get', error);
         if (!data) return err('Not found', 404);
-        return json({ restaurant: restaurantToApi(data) });
+        const isPrivilegedViewer = session && (session.type === 'central' || (session.restaurantId === id && (session.type === 'manager' || session.type === 'chef')));
+        const mapper = isPrivilegedViewer ? restaurantToApiWithCreds : restaurantToApi;
+        return json({ restaurant: mapper(data) });
       }
       if (method === 'PUT') {
+        const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: id });
+        if (!guard.ok) return guard.response;
         const body = await request.json();
         const upd = { updated_at: new Date().toISOString() };
-        if (body.name !== undefined) upd.name = body.name;
-        if (body.ownerName !== undefined) upd.owner_name = body.ownerName;
-        if (body.email !== undefined) upd.email = body.email;
-        if (body.contact !== undefined) upd.contact = body.contact;
-        if (body.address !== undefined) upd.address = body.address;
-        if (body.domain !== undefined) upd.domain = body.domain;
-        if (body.logoUrl !== undefined) upd.logo_url = body.logoUrl;
-        if (body.subscription !== undefined) upd.subscription = body.subscription;
+        if (body.name !== undefined) upd.name = clampStr(body.name, 120);
+        if (body.ownerName !== undefined) upd.owner_name = clampStr(body.ownerName, 120);
+        if (body.email !== undefined) upd.email = clampStr(body.email, 200);
+        if (body.contact !== undefined) upd.contact = clampStr(body.contact, 40);
+        if (body.address !== undefined) upd.address = clampStr(body.address, 240);
+        if (body.domain !== undefined) upd.domain = clampStr(body.domain, 120);
+        if (body.logoUrl !== undefined) upd.logo_url = clampStr(body.logoUrl, 500);
+        if (body.subscription !== undefined && guard.session.type === 'central') {
+          upd.subscription = clampStr(body.subscription, 40);
+        }
         const { data, error } = await sb.from('restaurants').update(upd).eq('id', id).select('*').single();
-        if (error) return err(error.message, 500);
-        return json({ restaurant: restaurantToApi(data) });
+        if (error) return safeErr('restaurant update', error);
+        const mapper = guard.session.type === 'central' ? restaurantToApiWithCreds : restaurantToApi;
+        return json({ restaurant: mapper(data) });
       }
       if (method === 'DELETE') {
-        const auth = await assertDeletePassword(request);
-        if (!auth.ok) return err('Delete password is incorrect', 403);
-        // FK cascade defined in schema handles menu/tables/orders
+        const guard = requireSession(request, { roles: ['central'] });
+        if (!guard.ok) return guard.response;
         const { error } = await sb.from('restaurants').delete().eq('id', id);
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('restaurant delete', error);
         return json({ ok: true });
       }
     }
@@ -1125,13 +1128,16 @@ async function handler(request, { params }) {
     const restServersMatch = path.match(/^restaurants\/([^\/]+)\/servers$/);
     if (restServersMatch && method === 'GET') {
       const id = restServersMatch[1];
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: id });
+      if (!guard.ok) return guard.response;
       const { data, error } = await sb.from('servers').select('*').eq('restaurant_id', id).order('name', { ascending: true });
-      if (error) return json({ servers: [], warning: error.message });
+      if (error) return json({ servers: [], warning: 'unavailable' });
+      const exposePasswords = guard.session.type === 'central';
       const servers = (data || []).map((s) => ({
         id: s.id,
         name: s.name,
         userId: s.user_id,
-        password: s.password,
+        ...(exposePasswords ? { password: s.password } : {}),
         assignedTableIds: s.assigned_table_ids || [],
         createdAt: s.created_at,
       }));
@@ -1140,8 +1146,10 @@ async function handler(request, { params }) {
     const restFeedbackMatch = path.match(/^restaurants\/([^\/]+)\/feedback$/);
     if (restFeedbackMatch && method === 'GET') {
       const id = restFeedbackMatch[1];
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: id });
+      if (!guard.ok) return guard.response;
       const { data, error } = await sb.from('feedback').select('*').eq('restaurant_id', id).order('created_at', { ascending: false }).limit(100);
-      if (error) return json({ feedback: [], warning: error.message });
+      if (error) return json({ feedback: [], warning: 'unavailable' });
       const feedback = (data || []).map((f) => ({
         id: f.id,
         restaurantId: f.restaurant_id,
@@ -1156,6 +1164,8 @@ async function handler(request, { params }) {
     const restSummaryMatch = path.match(/^restaurants\/([^\/]+)\/summary$/);
     if (restSummaryMatch && method === 'GET') {
       const id = restSummaryMatch[1];
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: id });
+      if (!guard.ok) return guard.response;
       const [restRes, ordersRes, tablesRes, menuRes, serversRes, feedbackRes] = await Promise.all([
         sb.from('restaurants').select('*').eq('id', id).maybeSingle(),
         sb.from('orders').select('*').eq('restaurant_id', id),
@@ -1164,7 +1174,7 @@ async function handler(request, { params }) {
         sb.from('servers').select('id').eq('restaurant_id', id),
         sb.from('feedback').select('rating').eq('restaurant_id', id),
       ]);
-      if (restRes.error) return err(restRes.error.message, 500);
+      if (restRes.error) return safeErr('summary restaurant', restRes.error);
       if (!restRes.data) return err('Not found', 404);
       const allOrders = ordersRes.data || [];
       const tables = tablesRes.data || [];
@@ -1181,8 +1191,9 @@ async function handler(request, { params }) {
       const occupiedTables = tables.filter((t) => t.status === 'occupied').length;
       const avgRating = feedback.length ? feedback.reduce((s, f) => s + (parseInt(f.rating) || 0), 0) / feedback.length : 0;
       const lastActivity = live.length ? live.map((o) => new Date(o.created_at).getTime()).reduce((a, b) => Math.max(a, b), 0) : null;
+      const mapper = guard.session.type === 'central' ? restaurantToApiWithCreds : restaurantToApi;
       return json({
-        restaurant: restaurantToApi(restRes.data),
+        restaurant: mapper(restRes.data),
         summary: {
           lifetimeRevenue,
           todayRevenue,
@@ -1210,53 +1221,61 @@ async function handler(request, { params }) {
       let q = sb.from('menu').select('*').eq('restaurant_id', restaurantId).order('category', { ascending: true }).order('name', { ascending: true });
       if (availableOnly) q = q.eq('available', true);
       const { data, error } = await q;
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('menu list', error);
       return json({ menu: (data || []).map(menuToApi) });
     }
     if (path === 'menu' && method === 'POST') {
       const body = await request.json();
+      if (!body.restaurantId) return err('restaurantId is required');
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: body.restaurantId });
+      if (!guard.ok) return guard.response;
       const row = {
         restaurant_id: body.restaurantId,
-        name: body.name,
-        name_es: body.nameEs || '',
-        description: body.description || '',
+        name: clampStr(body.name, 120),
+        name_es: clampStr(body.nameEs, 120),
+        description: clampStr(body.description, 500),
         price: parseFloat(body.price) || 0,
-        category: body.category || 'Mains',
+        category: clampStr(body.category || 'Mains', 40),
         image: normalizeImage(body.image) || getRandomFoodImage(),
-        video_url: String(body.videoUrl || '').trim(),
+        video_url: clampStr(String(body.videoUrl || '').trim(), 500),
         available: body.available !== false,
         mood_tags: normalizeTagList(body.moodTags),
         taste_tags: normalizeTagList(body.tasteTags),
         dietary_tags: normalizeTagList(body.dietaryTags),
       };
       const { data, error } = await sb.from('menu').insert(row).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('menu insert', error);
       return json({ item: menuToApi(data) });
     }
     const menuMatch = path.match(/^menu\/([^\/]+)$/);
     if (menuMatch) {
       const id = menuMatch[1];
+      const { data: existing, error: lookupError } = await sb.from('menu').select('restaurant_id').eq('id', id).maybeSingle();
+      if (lookupError) return safeErr('menu lookup', lookupError);
+      if (!existing) return err('Not found', 404);
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: existing.restaurant_id });
+      if (!guard.ok) return guard.response;
       if (method === 'PUT') {
         const body = await request.json();
         const upd = {};
-        if (body.name !== undefined) upd.name = body.name;
-        if (body.description !== undefined) upd.description = body.description;
+        if (body.name !== undefined) upd.name = clampStr(body.name, 120);
+        if (body.description !== undefined) upd.description = clampStr(body.description, 500);
         if (body.price !== undefined) upd.price = parseFloat(body.price);
-        if (body.category !== undefined) upd.category = body.category;
+        if (body.category !== undefined) upd.category = clampStr(body.category, 40);
         if (body.image !== undefined) upd.image = normalizeImage(body.image) || getRandomFoodImage();
-        if (body.videoUrl !== undefined) upd.video_url = String(body.videoUrl || '').trim();
+        if (body.videoUrl !== undefined) upd.video_url = clampStr(String(body.videoUrl || '').trim(), 500);
         if (body.available !== undefined) upd.available = body.available;
-        if (body.nameEs !== undefined) upd.name_es = body.nameEs;
+        if (body.nameEs !== undefined) upd.name_es = clampStr(body.nameEs, 120);
         if (body.moodTags !== undefined) upd.mood_tags = normalizeTagList(body.moodTags);
         if (body.tasteTags !== undefined) upd.taste_tags = normalizeTagList(body.tasteTags);
         if (body.dietaryTags !== undefined) upd.dietary_tags = normalizeTagList(body.dietaryTags);
         const { error } = await sb.from('menu').update(upd).eq('id', id);
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('menu update', error);
         return json({ ok: true });
       }
       if (method === 'DELETE') {
         const { error } = await sb.from('menu').delete().eq('id', id);
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('menu delete', error);
         return json({ ok: true });
       }
     }
@@ -1266,19 +1285,22 @@ async function handler(request, { params }) {
       const url = new URL(request.url);
       const restaurantId = url.searchParams.get('restaurantId');
       const { data, error } = await sb.from('rest_tables').select('*').eq('restaurant_id', restaurantId).order('number', { ascending: true });
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('tables list', error);
       return json({ tables: (data || []).map(tableToApi) });
     }
     if (path === 'tables' && method === 'POST') {
       const body = await request.json();
+      if (!body.restaurantId) return err('restaurantId is required');
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: body.restaurantId });
+      if (!guard.ok) return guard.response;
       const row = {
         restaurant_id: body.restaurantId,
-        number: String(body.number),
-        seats: parseInt(body.seats) || 2,
+        number: clampStr(String(body.number), 16),
+        seats: Math.max(1, Math.min(64, parseInt(body.seats, 10) || 2)),
         status: 'available',
       };
       const { data, error } = await sb.from('rest_tables').insert(row).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('tables insert', error);
       return json({ table: tableToApi(data) });
     }
     const tblMatch = path.match(/^tables\/([^\/]+)$/);
@@ -1286,23 +1308,28 @@ async function handler(request, { params }) {
       const id = tblMatch[1];
       if (method === 'GET') {
         const { data, error } = await sb.from('rest_tables').select('*').eq('id', id).maybeSingle();
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('table get', error);
         if (!data) return err('Not found', 404);
         return json({ table: tableToApi(data) });
       }
+      const { data: existing, error: lookupError } = await sb.from('rest_tables').select('restaurant_id').eq('id', id).maybeSingle();
+      if (lookupError) return safeErr('table lookup', lookupError);
+      if (!existing) return err('Not found', 404);
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: existing.restaurant_id });
+      if (!guard.ok) return guard.response;
       if (method === 'PUT') {
         const body = await request.json();
         const upd = {};
-        if (body.number !== undefined) upd.number = String(body.number);
-        if (body.seats !== undefined) upd.seats = parseInt(body.seats);
-        if (body.status !== undefined) upd.status = body.status;
+        if (body.number !== undefined) upd.number = clampStr(String(body.number), 16);
+        if (body.seats !== undefined) upd.seats = Math.max(1, Math.min(64, parseInt(body.seats, 10) || 2));
+        if (body.status !== undefined) upd.status = clampStr(body.status, 24);
         const { error } = await sb.from('rest_tables').update(upd).eq('id', id);
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('table update', error);
         return json({ ok: true });
       }
       if (method === 'DELETE') {
         const { error } = await sb.from('rest_tables').delete().eq('id', id);
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('table delete', error);
         return json({ ok: true });
       }
     }
@@ -1311,29 +1338,38 @@ async function handler(request, { params }) {
     if (path === 'orders' && method === 'GET') {
       const url = new URL(request.url);
       const restaurantId = url.searchParams.get('restaurantId');
+      if (!restaurantId) return err('restaurantId is required');
+      const guard = requireSession(request, { roles: ['central', 'manager', 'chef', 'server'], restaurantId });
+      if (!guard.ok) return guard.response;
       const { data, error } = await sb.from('orders').select('*').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(200);
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('orders list', error);
       return json({ orders: (data || []).map(orderToApi) });
     }
     if (path === 'orders' && method === 'POST') {
+      // Public: a customer at a QR-scanned table places an order. We never
+      // trust the client-supplied prices — we recompute the total from the
+      // restaurant's current menu.
       const body = await request.json();
       const { data: tbl, error: te } = await sb.from('rest_tables').select('*').eq('id', body.tableId).maybeSingle();
-      if (te) return err(te.message, 500);
+      if (te) return safeErr('orders table lookup', te);
       if (!tbl) return err('Invalid table');
-      const items = (body.items || []).map(i => ({ id: i.id, name: i.name, nameEs: i.nameEs || '', price: parseFloat(i.price), qty: parseInt(i.qty) || 1, notes: i.notes || '' }));
-      const total = items.reduce((s, i) => s + i.price * i.qty, 0);
+      if (body.restaurantId && tbl.restaurant_id !== body.restaurantId) return err('Invalid table');
+      const { data: menuRows, error: me } = await sb.from('menu').select('id,name,name_es,price,available').eq('restaurant_id', tbl.restaurant_id);
+      if (me) return safeErr('orders menu lookup', me);
+      const { items, total } = rebuildOrderItems(body.items, menuRows || []);
+      if (!items.length) return err('No valid items in order');
       const row = {
-        restaurant_id: body.restaurantId,
+        restaurant_id: tbl.restaurant_id,
         table_id: body.tableId,
         table_number: tbl.number,
         items,
         total,
         status: 'pending',
-        allergy: body.allergy || '',
-        spicy_level: body.spicyLevel || '',
-        preference: body.preference || '',
-        avoid: body.avoid || '',
-        notes: body.chefNotes || body.notes || '',
+        allergy: clampStr(body.allergy, 240),
+        spicy_level: clampStr(body.spicyLevel, 40),
+        preference: clampStr(body.preference, 240),
+        avoid: clampStr(body.avoid, 240),
+        notes: clampStr(body.chefNotes || body.notes, 240),
         payment_status: 'unpaid',
         payment_reference: '',
         payment_provider: '',
@@ -1343,7 +1379,7 @@ async function handler(request, { params }) {
         payment_created_at: null,
       };
       const { data, error } = await sb.from('orders').insert(row).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('orders insert', error);
       await sb.from('rest_tables').update({ status: 'occupied' }).eq('id', body.tableId);
       return json({ order: orderToApi(data) });
     }
@@ -1352,35 +1388,32 @@ async function handler(request, { params }) {
       const id = orderMatch[1];
       if (method === 'GET') {
         const { data, error } = await sb.from('orders').select('*').eq('id', id).maybeSingle();
-        if (error) return err(error.message, 500);
+        if (error) return safeErr('order get', error);
         if (!data) return err('Not found', 404);
         return json({ order: orderToApi(data) });
       }
       if (method === 'PUT') {
+        const { data: existing, error: lookupError } = await sb.from('orders').select('restaurant_id').eq('id', id).maybeSingle();
+        if (lookupError) return safeErr('order lookup', lookupError);
+        if (!existing) return err('Not found', 404);
+        const guard = requireSession(request, { roles: ['central', 'manager', 'chef', 'server'], restaurantId: existing.restaurant_id });
+        if (!guard.ok) return guard.response;
         const body = await request.json();
         const upd = { updated_at: new Date().toISOString() };
-        if (body.status) upd.status = body.status;
-        if (body.allergy !== undefined) upd.allergy = body.allergy;
-        if (body.spicyLevel !== undefined) upd.spicy_level = body.spicyLevel;
-        if (body.preference !== undefined) upd.preference = body.preference;
-        if (body.avoid !== undefined) upd.avoid = body.avoid;
-        if (body.chefNotes !== undefined || body.notes !== undefined) {
-          upd.notes = body.chefNotes || body.notes || '';
+        if (body.status) {
+          if (!ALLOWED_ORDER_STATUSES.has(body.status)) return err('Invalid status');
+          if (body.status === 'paid') return err("Use /payment/* endpoints to mark an order paid", 400);
+          upd.status = body.status;
         }
-        if (body.status === 'paid') {
-          upd.paid_at = new Date().toISOString();
-          upd.payment_status = 'paid';
-          const { data: existing } = await sb.from('orders').select('payment_reference,payment_provider,payment_method').eq('id', id).maybeSingle();
-          upd.payment_reference = existing?.payment_reference || makeUpiReference();
-          upd.payment_provider = existing?.payment_provider || 'manual';
-          upd.payment_method = existing?.payment_method || 'cash';
+        if (body.allergy !== undefined) upd.allergy = clampStr(body.allergy, 240);
+        if (body.spicyLevel !== undefined) upd.spicy_level = clampStr(body.spicyLevel, 40);
+        if (body.preference !== undefined) upd.preference = clampStr(body.preference, 240);
+        if (body.avoid !== undefined) upd.avoid = clampStr(body.avoid, 240);
+        if (body.chefNotes !== undefined || body.notes !== undefined) {
+          upd.notes = clampStr(body.chefNotes || body.notes, 240);
         }
         const { error } = await sb.from('orders').update(upd).eq('id', id);
-        if (error) return err(error.message, 500);
-        if (body.status === 'paid') {
-          const { data: o } = await sb.from('orders').select('table_id').eq('id', id).maybeSingle();
-          if (o) await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
-        }
+        if (error) return safeErr('order update', error);
         return json({ ok: true });
       }
     }
@@ -1389,18 +1422,21 @@ async function handler(request, { params }) {
       const id = addonsMatch[1];
       const body = await request.json();
       const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', id).maybeSingle();
-      if (ge) return err(ge.message, 500);
+      if (ge) return safeErr('addons get', ge);
       if (!o) return err('Not found', 404);
+      if (o.payment_status === 'paid' || o.status === 'paid') return err('Order is closed', 409);
+      const { data: menuRows } = await sb.from('menu').select('id,name,name_es,price,available').eq('restaurant_id', o.restaurant_id);
+      const { items: addItems } = rebuildOrderItems(body.items, menuRows || []);
       const items = [...(o.items || [])];
-      for (const it of (body.items || [])) {
-        const ex = items.find(x => x.id === it.id);
-        if (ex) ex.qty += parseInt(it.qty) || 1;
-        else items.push({ id: it.id, name: it.name, nameEs: it.nameEs || '', price: parseFloat(it.price), qty: parseInt(it.qty) || 1, notes: it.notes || '' });
+      for (const it of addItems) {
+        const ex = items.find((x) => x.id === it.id);
+        if (ex) ex.qty = Math.min(99, ex.qty + it.qty);
+        else items.push({ ...it, isAdditional: true });
       }
-      const total = items.reduce((s, i) => s + parseFloat(i.price) * i.qty, 0);
+      const total = Math.round(items.reduce((s, i) => s + parseFloat(i.price) * i.qty, 0) * 100) / 100;
       const newStatus = o.status === 'served' ? 'preparing' : o.status;
       const { data, error } = await sb.from('orders').update({ items, total, status: newStatus, updated_at: new Date().toISOString() }).eq('id', id).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('addons update', error);
       return json({ order: orderToApi(data) });
     }
 
@@ -1408,7 +1444,7 @@ async function handler(request, { params }) {
     if (path === 'payment/demo' && method === 'POST') {
       const { orderId } = await request.json();
       const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
-      if (ge) return err(ge.message, 500);
+      if (ge) return safeErr('payment/demo get', ge);
       if (!o) return err('Order not found', 404);
       const paymentReference = o.payment_reference || makeUpiReference();
       const { data, error } = await sb.from('orders').update({
@@ -1419,7 +1455,7 @@ async function handler(request, { params }) {
         payment_provider: o.payment_provider || 'demo',
         payment_method: o.payment_method || 'card',
       }).eq('id', orderId).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('payment/demo update', error);
       await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
       return json({ order: orderToApi(data) });
     }
@@ -1428,7 +1464,7 @@ async function handler(request, { params }) {
     if (path === 'payment/upi/init' && method === 'POST') {
       const { orderId } = await request.json();
       const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
-      if (ge) return err(ge.message, 500);
+      if (ge) return safeErr('upi/init get', ge);
       if (!o) return err('Order not found', 404);
 
       const paymentReference = o.payment_reference || makeUpiReference();
@@ -1449,7 +1485,7 @@ async function handler(request, { params }) {
         payment_qr: paymentQr,
         payment_created_at: paymentCreatedAt,
       }).eq('id', orderId).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('upi/init update', error);
       return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
     }
 
@@ -1457,7 +1493,7 @@ async function handler(request, { params }) {
       const url = new URL(request.url);
       const orderId = url.searchParams.get('orderId');
       const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
-      if (ge) return err(ge.message, 500);
+      if (ge) return safeErr('upi/status get', ge);
       if (!o) return err('Order not found', 404);
 
       const row = { ...o };
@@ -1489,103 +1525,55 @@ async function handler(request, { params }) {
         paid_at: row.paid_at,
         updated_at: row.updated_at || new Date().toISOString(),
       }).eq('id', orderId).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('upi/status update', error);
       if (settled) {
         await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
       }
       return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
     }
 
-    // ============ PAYMENT (UPI DEMO) ============
-    if (path === 'payment/upi/init' && method === 'POST') {
-      const { orderId } = await request.json();
-      const { data: o, error } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
-      if (error) return err(error.message, 500);
-      if (!o) return err('Order not found', 404);
-      const updated = {
-        payment_reference: o.payment_reference || makeUpiReference(),
-        payment_provider: o.payment_provider || 'demo-upi',
-        payment_method: o.payment_method || 'upi',
-        payment_vpa: o.payment_vpa || DEMO_UPI_VPA,
-        payment_created_at: o.payment_created_at || new Date().toISOString(),
-        payment_status: o.payment_status && o.payment_status !== 'unpaid' ? o.payment_status : 'pending',
-      };
-      if (!o.payment_qr) {
-        updated.payment_qr = buildUpiUri({
-          vpa: updated.payment_vpa,
-          name: DEMO_UPI_PAYEE,
-          amount: toAmount(o.total),
-          reference: updated.payment_reference,
-        });
-      }
-      const { data, error: ue } = await sb.from('orders').update(updated).eq('id', orderId).select('*').single();
-      if (ue) return err(ue.message, 500);
-      return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
-    }
-
-    if (path === 'payment/upi/status' && method === 'GET') {
-      const url = new URL(request.url);
-      const orderId = url.searchParams.get('orderId');
-      const { data: o, error } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
-      if (error) return err(error.message, 500);
-      if (!o) return err('Order not found', 404);
-
-      let updated = null;
-      const createdAt = o.payment_created_at ? new Date(o.payment_created_at).getTime() : 0;
-      if (o.payment_status === 'pending' && createdAt && Date.now() - createdAt >= DEMO_UPI_AUTO_SETTLE_MS) {
-        updated = {
-          payment_status: 'paid',
-          status: 'paid',
-          paid_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-      }
-
-      let finalRow = o;
-      if (updated) {
-        const { data, error: ue } = await sb.from('orders').update(updated).eq('id', orderId).select('*').single();
-        if (ue) return err(ue.message, 500);
-        finalRow = data;
-        await sb.from('rest_tables').update({ status: 'available' }).eq('id', finalRow.table_id);
-      }
-
-      return json({ order: orderToApi(finalRow), payment: buildUpiPayment(finalRow) });
-    }
-
     // ============ FEEDBACK ============
     if (path === 'feedback' && method === 'POST') {
       const body = await request.json();
+      const rating = parseInt(body.rating, 10);
       const row = {
         restaurant_id: body.restaurantId,
         table_id: body.tableId,
         order_id: body.orderId,
-        rating: parseInt(body.rating) || null,
-        comment: body.comment || '',
+        rating: Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null,
+        comment: clampStr(body.comment, 1000),
       };
       const { error } = await sb.from('feedback').insert(row);
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('feedback insert', error);
       return json({ ok: true });
     }
 
     // ============ SUPPORT MESSAGES ============
     if (path === 'support' && method === 'GET') {
+      const guard = requireSession(request, { roles: ['central', 'manager'] });
+      if (!guard.ok) return guard.response;
       const url = new URL(request.url);
-      const restaurantId = url.searchParams.get('restaurantId');
+      const queryRestaurantId = url.searchParams.get('restaurantId');
+      const scopedId = guard.session.type === 'central' ? queryRestaurantId : guard.session.restaurantId;
       let query = sb.from('support_messages').select('*').order('created_at', { ascending: true });
-      if (restaurantId) query = query.eq('restaurant_id', restaurantId);
+      if (scopedId) query = query.eq('restaurant_id', scopedId);
       const { data, error } = await query;
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('support list', error);
       return json({ messages: data || [] });
     }
     if (path === 'support' && method === 'POST') {
+      const guard = requireSession(request, { roles: ['central', 'manager'] });
+      if (!guard.ok) return guard.response;
       const body = await request.json();
+      const scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+      if (!scopedId) return err('restaurantId is required');
       const row = {
-        restaurant_id: body.restaurantId,
-        sender: body.sender || 'restaurant',
-        message: body.message,
+        restaurant_id: scopedId,
+        sender: clampStr(body.sender || 'restaurant', 40),
+        message: clampStr(body.message, 2000),
       };
       const { data, error } = await sb.from('support_messages').insert(row).select('*').single();
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('support insert', error);
       return json({ message: data });
     }
 
@@ -1593,16 +1581,19 @@ async function handler(request, { params }) {
     if (path === 'analytics' && method === 'GET') {
       const url = new URL(request.url);
       const restaurantId = url.searchParams.get('restaurantId');
+      if (!restaurantId) return err('restaurantId is required');
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId });
+      if (!guard.ok) return guard.response;
       const { data: all, error } = await sb.from('orders').select('*').eq('restaurant_id', restaurantId).neq('status', 'cancelled');
-      if (error) return err(error.message, 500);
+      if (error) return safeErr('analytics list', error);
       const orders = (all || []);
       const today = new Date(); today.setHours(0,0,0,0);
-      const todays = orders.filter(o => new Date(o.created_at) >= today);
+      const todays = orders.filter((o) => new Date(o.created_at) >= today);
       const todayRevenue = todays.reduce((s,o)=>s+parseFloat(o.total),0);
       const todayOrders = todays.length;
       const avgTicket = todayOrders ? todayRevenue / todayOrders : 0;
       const itemMap = {};
-      orders.forEach(o => (o.items || []).forEach(i => {
+      orders.forEach((o) => (o.items || []).forEach((i) => {
         const k = i.name;
         itemMap[k] = itemMap[k] || { name: k, count: 0, revenue: 0 };
         itemMap[k].count += i.qty;
@@ -1611,13 +1602,13 @@ async function handler(request, { params }) {
       const topItems = Object.values(itemMap).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
       const byHourMap = {};
       for (let h = 0; h < 24; h++) byHourMap[h] = { hour: `${String(h).padStart(2,'0')}h`, orders: 0 };
-      todays.forEach(o => { const h = new Date(o.created_at).getHours(); byHourMap[h].orders += 1; });
+      todays.forEach((o) => { const h = new Date(o.created_at).getHours(); byHourMap[h].orders += 1; });
       const byHour = Object.values(byHourMap);
       const last7 = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - i);
         const next = new Date(d); next.setDate(next.getDate()+1);
-        const rev = orders.filter(o => new Date(o.created_at) >= d && new Date(o.created_at) < next).reduce((s,o)=>s+parseFloat(o.total),0);
+        const rev = orders.filter((o) => new Date(o.created_at) >= d && new Date(o.created_at) < next).reduce((s,o)=>s+parseFloat(o.total),0);
         last7.push({ date: d.toLocaleDateString('en-US',{month:'short',day:'numeric'}), revenue: Math.round(rev*100)/100 });
       }
       return json({ todayRevenue, todayOrders, avgTicket, topItems, byHour, last7 });
@@ -1625,19 +1616,21 @@ async function handler(request, { params }) {
 
     // ============ CENTRAL STATS ============
     if (path === 'central/stats' && method === 'GET') {
+      const guard = requireSession(request, { roles: ['central'] });
+      if (!guard.ok) return guard.response;
       const { data: restaurants } = await sb.from('restaurants').select('*');
       const { data: orders } = await sb.from('orders').select('*').neq('status', 'cancelled');
       const totalRevenue = (orders || []).reduce((s,o)=>s+parseFloat(o.total),0);
       const planPrice = { Starter: 49, Pro: 99, Premium: 199, Enterprise: 499 };
       const mrr = (restaurants || []).reduce((s,r)=>s+(planPrice[r.subscription]||0),0);
       const byPlanMap = {};
-      (restaurants || []).forEach(r => { byPlanMap[r.subscription] = (byPlanMap[r.subscription]||0)+1; });
+      (restaurants || []).forEach((r) => { byPlanMap[r.subscription] = (byPlanMap[r.subscription]||0)+1; });
       const byPlan = Object.entries(byPlanMap).map(([name,value])=>({ name, value }));
       const trend = [];
       for (let i = 13; i >= 0; i--) {
         const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-i);
         const next = new Date(d); next.setDate(next.getDate()+1);
-        const rev = (orders || []).filter(o => new Date(o.created_at) >= d && new Date(o.created_at) < next).reduce((s,o)=>s+parseFloat(o.total),0);
+        const rev = (orders || []).filter((o) => new Date(o.created_at) >= d && new Date(o.created_at) < next).reduce((s,o)=>s+parseFloat(o.total),0);
         trend.push({ date: d.toLocaleDateString('en-US',{month:'short',day:'numeric'}), revenue: Math.round(rev*100)/100 });
       }
       return json({ totalRestaurants: (restaurants || []).length, totalRevenue, totalOrders: (orders || []).length, mrr, byPlan, trend });
@@ -1646,14 +1639,26 @@ async function handler(request, { params }) {
     // ============ AI WAITER CHAT (Gemini → NLU fallback) ============
     if (path === 'chat' && method === 'POST') {
       const body = await request.json();
-      const { sessionId, restaurantId, tableId, language = 'en', message = '', menu = [], cart = [], allergy = '', preference = '', avoid = '', chefNotes = '', stage = 'browsing' } = body;
+      const {
+        sessionId, restaurantId, tableId, language = 'en',
+        message = '', menu = [], cart = [], allergy = '', preference = '',
+        avoid = '', chefNotes = '', stage = 'browsing',
+      } = body;
       const { data: restaurant } = await sb.from('restaurants').select('name').eq('id', restaurantId).maybeSingle();
       const { data: session } = await sb.from('chat_sessions').select('*').eq('session_id', sessionId).maybeSingle();
       const history = (session?.history || []);
 
       const { reply, actions } = await aiWaiterReply({
-        message, menu, cart, allergy, preference, avoid, notes: chefNotes, stage,
-        restaurantName: restaurant?.name, history, language,
+        message: clampStr(message, 2000),
+        menu, cart,
+        allergy: clampStr(allergy, 240),
+        preference: clampStr(preference, 240),
+        avoid: clampStr(avoid, 240),
+        notes: clampStr(chefNotes, 240),
+        stage,
+        restaurantName: restaurant?.name,
+        history,
+        language,
       });
 
       const newHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: reply }].slice(-30);
@@ -1663,15 +1668,13 @@ async function handler(request, { params }) {
 
     // ============ HEALTH ============
     if (path === '' || path === 'health') {
-      // Quick check: can we hit Supabase?
       const { error } = await sb.from('users').select('user_id').limit(1);
-      return json({ status: 'ok', service: 'netrik-shop', db: error ? `error: ${error.message}` : 'supabase-ok', time: new Date().toISOString() });
+      return json({ status: 'ok', service: 'netrik-shop', db: error ? 'error' : 'supabase-ok', time: new Date().toISOString() });
     }
 
     return err(`Not found: /${path}`, 404);
   } catch (e) {
-    console.error('API error', e);
-    return err(e.message || 'Server error', 500);
+    return safeErr('uncaught', e);
   }
 }
 
@@ -1680,3 +1683,4 @@ export const POST = handler;
 export const PUT = handler;
 export const DELETE = handler;
 export const PATCH = handler;
+export const OPTIONS = () => new NextResponse(null, { status: 204 });

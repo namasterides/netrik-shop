@@ -538,7 +538,7 @@ export default function ManagerDashboard() {
               size="sm"
               variant="ghost"
               className="rounded-full text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
-              onClick={() => { localStorage.removeItem('netrik_user'); router.push('/login'); }}
+              onClick={() => { fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); localStorage.removeItem('netrik_user'); router.push('/login'); }}
             >
               <LogOut className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Logout</span>

@@ -183,7 +183,7 @@ export default function RestaurantDetail() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [form, setForm] = useState(null);
   const [orderSearch, setOrderSearch] = useState('');
 
@@ -315,12 +315,14 @@ export default function RestaurantDetail() {
   };
 
   const remove = async () => {
+    if (deleteConfirmName.trim() !== restaurant?.name) {
+      return toast.error('Type the restaurant name exactly to confirm.');
+    }
     const res = await fetch(`/api/restaurants/${restaurantId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deletePassword }),
     });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.error || 'Failed');
     toast.success('Restaurant deleted');
     router.push('/central');
@@ -946,13 +948,13 @@ export default function RestaurantDetail() {
               This permanently removes <span className="font-semibold text-neutral-900">{restaurant.name}</span> — all menus, tables, orders, feedback, staff accounts and chat history. This cannot be undone.
             </p>
             <div>
-              <Label className="text-xs font-semibold">Delete password</Label>
+              <Label className="text-xs font-semibold">Type <span className="font-mono">{restaurant.name}</span> to confirm</Label>
               <Input
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
                 className="mt-1.5"
-                placeholder="Type password"
+                placeholder={restaurant.name}
+                autoComplete="off"
               />
             </div>
           </div>
