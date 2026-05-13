@@ -17,6 +17,7 @@ import {
   attachSession,
   clearSession,
 } from '@/lib/auth';
+import { createCheckoutSession, getSessionStatus, handleWebhookEvent, verifyWebhookSignature } from '@/lib/stripe';
 
 // Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
 async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language }) {
@@ -1530,6 +1531,139 @@ async function handler(request, { params }) {
         await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
       }
       return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
+    }
+
+    // ============ PAYMENT (STRIPE) ============
+    if (path === 'payment/stripe/init' && method === 'POST') {
+      const { orderId } = await request.json();
+      const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
+      if (ge) return safeErr('stripe/init get', ge);
+      if (!o) return err('Order not found', 404);
+
+      const { data: restaurant } = await sb.from('restaurants').select('*').eq('id', o.restaurant_id).maybeSingle();
+      
+      const result = await createCheckoutSession({
+        orderId: o.id,
+        amount: o.total,
+        restaurantName: restaurant?.name || 'Restaurant',
+        tableId: o.table_id,
+        customerEmail: o.customer_email || 'customer@example.com',
+      });
+
+      if (!result.success) {
+        return safeErr('stripe checkout creation', result.error);
+      }
+
+      const paymentCreatedAt = new Date().toISOString();
+      const { data, error } = await sb.from('orders').update({
+        payment_status: 'pending',
+        payment_reference: result.sessionId,
+        payment_provider: 'stripe',
+        payment_method: 'card',
+        payment_created_at: paymentCreatedAt,
+      }).eq('id', orderId).select('*').single();
+
+      if (error) return safeErr('stripe/init update', error);
+
+      return json({
+        order: orderToApi(data),
+        payment: {
+          status: 'pending',
+          reference: result.sessionId,
+          provider: 'stripe',
+          method: 'card',
+          createdAt: paymentCreatedAt,
+          checkoutUrl: result.checkoutUrl,
+        },
+        checkoutUrl: result.checkoutUrl,
+      });
+    }
+
+    if (path === 'payment/stripe/status' && method === 'GET') {
+      const url = new URL(request.url);
+      const orderId = url.searchParams.get('orderId');
+      const sessionId = url.searchParams.get('sessionId');
+
+      const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
+      if (ge) return safeErr('stripe/status get', ge);
+      if (!o) return err('Order not found', 404);
+
+      if (!sessionId && !o.payment_reference) {
+        return json({
+          order: orderToApi(o),
+          payment: {
+            status: 'unpaid',
+            reference: o.payment_reference,
+            provider: 'stripe',
+            method: 'card',
+          },
+        });
+      }
+
+      const session = await getSessionStatus(sessionId || o.payment_reference);
+      
+      let paymentStatus = o.payment_status || 'unpaid';
+      let orderStatus = o.status;
+      let paidAt = o.paid_at;
+
+      if (session.success && session.status === 'paid') {
+        paymentStatus = 'paid';
+        orderStatus = 'paid';
+        paidAt = new Date().toISOString();
+
+        const { error: updateError } = await sb.from('orders').update({
+          payment_status: 'paid',
+          status: 'paid',
+          paid_at: paidAt,
+          updated_at: new Date().toISOString(),
+        }).eq('id', orderId);
+
+        if (updateError) console.error('stripe/status update error:', updateError);
+        else {
+          await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
+        }
+      }
+
+      return json({
+        order: { ...orderToApi(o), status: orderStatus, paid_at: paidAt },
+        payment: {
+          status: paymentStatus,
+          reference: sessionId || o.payment_reference,
+          provider: 'stripe',
+          method: 'card',
+        },
+      });
+    }
+
+    // ============ PAYMENT (STRIPE WEBHOOK) ============
+    if (path === 'payment/stripe/webhook' && method === 'POST') {
+      const signature = request.headers.get('stripe-signature');
+      if (!signature) return err('Missing stripe-signature header', 400);
+
+      const body = await request.text();
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!webhookSecret) {
+        console.warn('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured');
+        return json({ received: true }); // Still acknowledge to avoid retries
+      }
+
+      const verification = verifyWebhookSignature(body, signature, webhookSecret);
+      if (!verification.success) {
+        console.error('[Stripe Webhook] Signature verification failed:', verification.error);
+        return err('Webhook signature verification failed', 401);
+      }
+
+      const event = verification.event;
+      const result = await handleWebhookEvent(event, sb);
+
+      if (result.handled) {
+        console.log('[Stripe Webhook] Event processed:', event.type, result);
+        return json({ received: true, processed: true });
+      }
+
+      console.log('[Stripe Webhook] Event acknowledged but not processed:', event.type);
+      return json({ received: true, processed: false });
     }
 
     // ============ FEEDBACK ============
