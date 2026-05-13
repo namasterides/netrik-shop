@@ -353,9 +353,11 @@ export default function ManagerDashboard() {
       th{background:#fafafa;text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#525252}
     </style></head><body>
       <div class="brand">
-        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        ${restaurant?.logoUrl ? `<img src="${restaurant.logoUrl}" alt="${restaurant?.name || 'Restaurant'}" style="height:44px;width:44px;object-fit:cover;display:block;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);" />` : ''}
         <div>
           <h1>${restaurant?.name || 'Restaurant'} · ${title}</h1>
+          ${restaurant?.address ? `<p style="margin:2px 0 0;font-size:11px;color:#6b7280">${restaurant.address}</p>` : ''}
+          ${restaurant?.contact ? `<p style="margin:2px 0 0;font-size:11px;color:#6b7280">${restaurant.contact}</p>` : ''}
         </div>
       </div>
       <p>Printed: ${new Date().toLocaleString()} · Rows: ${rows.length}</p>
@@ -363,6 +365,12 @@ export default function ManagerDashboard() {
         <thead><tr><th>Date</th><th>Order</th><th>Table</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
         <tbody>${bodyRows || '<tr><td colspan="6">No rows found</td></tr>'}</tbody>
       </table>
+      <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
+        POWERED BY
+        <div style="margin-top:8px;">
+          <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:22px;width:auto;margin:0 auto;opacity:0.85;" />
+        </div>
+      </div>
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
     w.document.close();
@@ -397,10 +405,12 @@ export default function ManagerDashboard() {
       </style>
     </head><body>
       <div class="brand">
-        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        ${restaurant?.logoUrl ? `<img src="${restaurant.logoUrl}" alt="${restaurant?.name || 'Restaurant'}" style="height:40px;width:40px;object-fit:cover;display:block;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);" />` : ''}
         <div>
           <h1>${restaurant?.name || 'Restaurant'} Receipt</h1>
           <div class="meta">Order ${order.id.slice(0, 8).toUpperCase()} · Table ${order.tableNumber}</div>
+          ${restaurant?.address ? `<div class="meta">${restaurant.address}</div>` : ''}
+          ${restaurant?.contact ? `<div class="meta">${restaurant.contact}</div>` : ''}
         </div>
       </div>
       <div class="meta">Status: ${order.status} · Payment: ${order.paymentStatus || 'unpaid'}</div>
@@ -411,6 +421,12 @@ export default function ManagerDashboard() {
         <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
       </table>
       <div class="total">Total: $${order.total.toFixed(2)}</div>
+      <div style="margin-top:30px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:10px;color:#6b7280;">
+        Powered by
+        <div style="margin-top:6px;">
+          <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:20px;width:auto;margin:0 auto;" />
+        </div>
+      </div>
     </body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -435,14 +451,20 @@ export default function ManagerDashboard() {
     if (!w) return;
     const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
     w.document.write(`<html><head><title>Table ${t.number} QR</title><style>body{font-family:Inter,system-ui;text-align:center;padding:48px;color:#0a0a0a}h1{font-size:30px;margin:0;font-weight:700;letter-spacing:-.02em}</style></head><body>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px;">
-        <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:42px;width:auto;" />
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:16px;">
+        ${restaurant?.logoUrl ? `<img src="${restaurant.logoUrl}" alt="${restaurant?.name || 'Restaurant'}" style="height:64px;width:64px;object-fit:cover;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);" />` : ''}
       </div>
       <h1>${restaurant?.name || ''}</h1>
       <h2 style="margin:24px 0 6px;font-weight:600">Table ${t.number}</h2>
       <p style="color:#666">Scan to order</p>
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tableUrl(t))}" style="margin:16px auto"/>
       <p style="color:#777;font-size:12px;">${tableUrl(t)}</p>
+      <div style="margin-top:48px;padding-top:20px;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
+        POWERED BY
+        <div style="margin-top:8px;">
+          <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:24px;width:auto;margin:0 auto;opacity:0.85;" />
+        </div>
+      </div>
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
   };

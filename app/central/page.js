@@ -273,6 +273,9 @@ export default function CentralAdmin() {
         <thead><tr><th>Restaurant</th><th>Owner</th><th>Email</th><th>Contact</th><th>Plan</th><th>Domain</th><th>Created</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7">No restaurants found</td></tr>'}</tbody>
       </table>
+      <div style="margin-top:48px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
+        POWERED BY NETRIK SHOP
+      </div>
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
     w.document.close();

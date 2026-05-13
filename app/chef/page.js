@@ -88,8 +88,10 @@ export default function ChefDashboard() {
       return `<tr><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.qty}×</b></td><td style="padding:6px 0;border-bottom:1px dashed #ddd"><b>${i.name}</b> ${additionalMark}<br/><span style='color:#666;font-size:11px'>${i.nameEs||''}</span>${i.notes?`<div style='font-size:11px;color:#444'>Note: ${i.notes}</div>`:''}</td></tr>`;
     }).join('');
     w.document.write(`<html><head><title>Ticket #${o.id.slice(0,6)}</title><style>body{font-family:'Inter',monospace;width:300px;padding:16px;color:#111}h2{margin:6px 0 0;font-size:18px}table{width:100%;border-collapse:collapse}td{vertical-align:top}.muted{color:#666;font-size:11px}img{height:28px;width:auto;display:block}</style></head><body>
-      <img src="${brandLogoUrl}" alt="Netrik Shop" />
+      ${restaurant?.logoUrl ? `<img src="${restaurant.logoUrl}" alt="${restaurant?.name||''}" style="height:44px;width:44px;object-fit:cover;display:block;border-radius:8px;margin-bottom:10px;" />` : ''}
       <h2>${restaurant?.name||''}</h2>
+      ${restaurant?.address ? `<div style="font-size:11px;color:#666;margin-top:2px;">${restaurant.address}</div>` : ''}
+      ${restaurant?.contact ? `<div style="font-size:11px;color:#666;margin-top:2px;">${restaurant.contact}</div>` : ''}
       <div class="muted">Kitchen ticket</div>
       <hr style="border:none;border-top:1px solid #ddd;margin:12px 0"/>
       <div><b>Ticket #${o.id.slice(0,6).toUpperCase()}</b></div>
@@ -100,6 +102,12 @@ export default function ChefDashboard() {
       ${o.allergy?`<p style='color:#b91c1c;margin-top:12px'><b>⚠ Allergy:</b> ${o.allergy}</p>`:''}
       ${o.spicyLevel?`<p style='color:#c2410c;margin-top:8px'><b>🌶 Spice:</b> ${o.spicyLevel}</p>`:''}
       ${o.notes?`<p style='color:#047857;margin-top:8px'><b>✍ Notes:</b> ${o.notes}</p>`:''}
+      <div style="margin-top:36px;padding-top:16px;border-top:1px dashed #ddd;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
+        POWERED BY
+        <div style="margin-top:8px;">
+          <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:22px;width:auto;margin:0 auto;opacity:0.85;" />
+        </div>
+      </div>
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
   };

@@ -226,10 +226,12 @@ export default function CustomerOrder() {
       </style>
     </head><body>
       <div class="brand">
-        <img src="${brandLogoUrl}" alt="Netrik Shop" />
+        ${restaurant?.logoUrl ? `<img src="${restaurant.logoUrl}" alt="${restaurant?.name || 'Restaurant'}" style="height:44px;width:44px;object-fit:cover;display:block;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);" />` : ''}
         <div>
           <h1>${restaurant?.name || 'Restaurant'} Receipt</h1>
           <div class="meta">Order ${currentOrder.id.slice(0, 8).toUpperCase()} · Table ${currentOrder.tableNumber}</div>
+          ${restaurant?.address ? `<div class="meta">${restaurant.address}</div>` : ''}
+          ${restaurant?.contact ? `<div class="meta">${restaurant.contact}</div>` : ''}
         </div>
       </div>
       <div class="meta">Status: ${currentOrder.status} · Payment: ${currentOrder.paymentStatus || currentPayment?.status || 'unpaid'}</div>
@@ -240,6 +242,12 @@ export default function CustomerOrder() {
         <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
       </table>
       <div class="total">Total: $${currentOrder.total.toFixed(2)}</div>
+      <div style="margin-top:36px;padding-top:20px;border-top:1px dashed #e5e7eb;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
+        POWERED BY
+        <div style="margin-top:8px;">
+          <img src="${brandLogoUrl}" alt="Netrik Shop" style="height:22px;width:auto;margin:0 auto;opacity:0.85;" />
+        </div>
+      </div>
     </body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
