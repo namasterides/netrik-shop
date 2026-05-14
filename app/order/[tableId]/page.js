@@ -26,9 +26,13 @@ import {
 
 const FALLBACK_MENU_IMAGE = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
 const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
+const STORAGE_VERSION = 1;
+const STORAGE_PREFIX = 'netrik_ai_waiter';
+const buildStorageKey = (tableId) => (tableId ? `${STORAGE_PREFIX}:${tableId}` : null);
 
 export default function CustomerOrder() {
   const { tableId } = useParams();
+  const storageKey = buildStorageKey(tableId);
   const [restaurant, setRestaurant] = useState(null);
   const [table, setTable] = useState(null);
   const [menu, setMenu] = useState([]);
@@ -40,7 +44,7 @@ export default function CustomerOrder() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [sessionId] = useState(() => 'sess_' + Math.random().toString(36).slice(2));
+  const [sessionId, setSessionId] = useState(() => 'sess_' + Math.random().toString(36).slice(2));
   const [order, setOrder] = useState(null);
   const [stage, setStage] = useState('browsing');
   const [rating, setRating] = useState(5);
@@ -48,6 +52,8 @@ export default function CustomerOrder() {
   const chatEndRef = useRef(null);
   const reminderRef = useRef(0);
   const cartPromptedRef = useRef(false);
+  const storedHasMessagesRef = useRef(false);
+  const persistReadyRef = useRef(false);
   const [showMenu, setShowMenu] = useState(false);
   const [menuCategory, setMenuCategory] = useState('All');
   const [menuSearch, setMenuSearch] = useState('');
@@ -65,6 +71,79 @@ export default function CustomerOrder() {
   const [pendingItems, setPendingItems] = useState(null);
 
   useEffect(() => {
+    if (!tableId || !storageKey) return;
+    const resetUiState = () => {
+      setInput('');
+      setSending(false);
+      setShowMenu(false);
+      setMenuCategory('All');
+      setMenuSearch('');
+      setPaymentOpen(false);
+      setShowBill(false);
+      setBurst(false);
+      setOrderSheetOpen(false);
+      setOrderSheetMode('place');
+      setPendingItems(null);
+      setDraftAllergy('');
+      setDraftPreference('');
+      setDraftAvoid('');
+      setDraftChefNotes('');
+    };
+    let restored = null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      restored = raw ? JSON.parse(raw) : null;
+    } catch {
+      restored = null;
+    }
+
+    if (restored && typeof restored === 'object') {
+      if (restored.sessionId) setSessionId(restored.sessionId);
+      else setSessionId(`sess_${Math.random().toString(36).slice(2)}`);
+      if (Array.isArray(restored.messages)) setMessages(restored.messages);
+      if (Array.isArray(restored.cart)) setCart(restored.cart);
+      if (typeof restored.allergy === 'string') setAllergy(restored.allergy);
+      if (typeof restored.preference === 'string') setPreference(restored.preference);
+      if (typeof restored.avoid === 'string') setAvoid(restored.avoid);
+      if (typeof restored.chefNotes === 'string') setChefNotes(restored.chefNotes);
+      if (restored.order) setOrder(restored.order);
+      if (typeof restored.stage === 'string') setStage(restored.stage);
+      if (typeof restored.rating === 'number') setRating(restored.rating);
+      if (typeof restored.feedback === 'string') setFeedback(restored.feedback);
+      if (restored.payment) setPayment(restored.payment);
+      if (typeof restored.checkoutUrl === 'string') setCheckoutUrl(restored.checkoutUrl);
+      if (restored.table) setTable(restored.table);
+      if (restored.restaurant) setRestaurant(restored.restaurant);
+      reminderRef.current = Number(restored.reminderCount || 0);
+      cartPromptedRef.current = Boolean(restored.cartPrompted);
+      storedHasMessagesRef.current = Array.isArray(restored.messages) && restored.messages.length > 0;
+      resetUiState();
+    } else {
+      setSessionId(`sess_${Math.random().toString(36).slice(2)}`);
+      setCart([]);
+      setAllergy('');
+      setPreference('');
+      setAvoid('');
+      setChefNotes('');
+      setMessages([]);
+      setOrder(null);
+      setStage('browsing');
+      setRating(5);
+      setFeedback('');
+      setPayment(null);
+      setCheckoutUrl('');
+      setTable(null);
+      setRestaurant(null);
+      reminderRef.current = 0;
+      cartPromptedRef.current = false;
+      storedHasMessagesRef.current = false;
+      resetUiState();
+    }
+
+    persistReadyRef.current = true;
+  }, [tableId, storageKey]);
+
+  useEffect(() => {
     if (!tableId) return;
     (async () => {
       try {
@@ -76,17 +155,64 @@ export default function CustomerOrder() {
         const m = await fetch(`/api/menu?restaurantId=${r.table.restaurantId}&availableOnly=1`, { cache: 'no-store' }).then((r) => r.json());
         setMenu(m.menu || []);
 
-        setMessages([
-          {
-            role: 'assistant',
-            text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, place your order and pay — all right here in this chat.`,
-          },
-        ]);
+        if (!storedHasMessagesRef.current) {
+          setMessages([
+            {
+              role: 'assistant',
+              text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, place your order and pay — all right here in this chat.`,
+            },
+          ]);
+        }
       } catch (e) {
         console.error(e);
       }
     })();
   }, [tableId]);
+
+  useEffect(() => {
+    if (!storageKey || !persistReadyRef.current || !sessionId) return;
+    const payload = {
+      v: STORAGE_VERSION,
+      updatedAt: new Date().toISOString(),
+      sessionId,
+      table,
+      restaurant,
+      messages,
+      cart,
+      allergy,
+      preference,
+      avoid,
+      chefNotes,
+      order,
+      stage,
+      rating,
+      feedback,
+      payment,
+      checkoutUrl,
+      reminderCount: reminderRef.current,
+      cartPrompted: cartPromptedRef.current,
+    };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {}
+  }, [
+    storageKey,
+    sessionId,
+    table,
+    restaurant,
+    messages,
+    cart,
+    allergy,
+    preference,
+    avoid,
+    chefNotes,
+    order,
+    stage,
+    rating,
+    feedback,
+    payment,
+    checkoutUrl,
+  ]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
