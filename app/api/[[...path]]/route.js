@@ -83,6 +83,22 @@ const clampStr = (v, max = 500) => {
   return s.slice(0, max);
 };
 
+function resolvePublicAppUrl(request) {
+  const configured = String(process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  if (forwardedHost) {
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    return `${proto}://${forwardedHost}`;
+  }
+  try {
+    const url = new URL(request.url);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return 'http://localhost:3000';
+  }
+}
+
 // Normalize a tag list: accepts array or comma-separated string,
 // trims, lowercases, dedupes, caps to 8 entries × 24 chars each.
 const normalizeTagList = (input) => {
@@ -1547,7 +1563,8 @@ async function handler(request, { params }) {
         amount: o.total,
         restaurantName: restaurant?.name || 'Restaurant',
         tableId: o.table_id,
-        customerEmail: o.customer_email || 'customer@example.com',
+        customerEmail: o.customer_email || undefined,
+        baseUrl: resolvePublicAppUrl(request),
       });
 
       if (!result.success) {

@@ -461,6 +461,7 @@ export default function CustomerOrder() {
 
   const startStripePayment = async () => {
     if (!order) return;
+    const previousStage = stage;
     setStage('paying');
     setMessages((m) => [...m, { role: 'assistant', text: `Opening secure card payment for $${order.total.toFixed(2)}.` }]);
     try {
@@ -469,13 +470,21 @@ export default function CustomerOrder() {
         body: JSON.stringify({ orderId: order.id }),
       });
       const data = await res.json();
-      if (!res.ok) return toast.error(data.error || 'Payment init failed');
+      if (!res.ok) {
+        setStage(previousStage);
+        return toast.error(data.error || 'Payment init failed');
+      }
       if (data.order) setOrder(data.order);
       if (data.payment) setPayment(data.payment || null);
       if (data.checkoutUrl) setCheckoutUrl(data.checkoutUrl);
       setPaymentOpen(true);
       if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank', 'noopener,noreferrer');
+      else {
+        setStage(previousStage);
+        toast.error('Checkout URL not returned. Please try again.');
+      }
     } catch (e) {
+      setStage(previousStage);
       toast.error('Unable to start card payment');
     }
   };
