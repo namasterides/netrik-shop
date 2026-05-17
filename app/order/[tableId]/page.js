@@ -35,7 +35,7 @@ const renderTextWithAnimatedEmojis = (text) => {
   const parts = String(text).split(/(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu);
   return parts.map((part, i) => {
     if (/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(part)) {
-      return <span key={i} className="emoji-pop inline-block">{part}</span>;
+      return <span key={i} className="emoji-pop inline-block text-[1.3em] mx-[1px]" style={{ animationDelay: `${(i % 5) * 0.1}s` }}>{part}</span>;
     }
     return <span key={i}>{part}</span>;
   });
@@ -104,6 +104,10 @@ export default function CustomerOrder() {
     try {
       const raw = localStorage.getItem(storageKey);
       restored = raw ? JSON.parse(raw) : null;
+      if (restored && (restored.stage === 'done' || (restored.order && restored.order.status === 'paid'))) {
+        localStorage.removeItem(storageKey);
+        restored = null;
+      }
     } catch {
       restored = null;
     }
@@ -515,7 +519,8 @@ export default function CustomerOrder() {
     });
     setStage('done');
     setMessages((m) => [...m, { role: 'assistant', text: 'Thank you for your feedback 🙏 Have a wonderful day.' }]);
-    setTimeout(() => { try { window.close(); } catch {} }, 900);
+    try { localStorage.removeItem(storageKey); } catch {}
+    setTimeout(() => { try { window.close(); } catch {} }, 1500);
   };
 
   const sendMessage = async (textOverride = null) => {
@@ -777,15 +782,15 @@ export default function CustomerOrder() {
           <div className="px-4 pb-3 flex gap-2 overflow-x-auto hide-scrollbar whitespace-nowrap animate-in slide-in-from-bottom-4">
             <button
               onClick={() => sendMessage('What are your popular dishes?')}
-              className="px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+              className="px-5 py-3 rounded-full bg-emerald-50 border border-emerald-200 text-base font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-sm"
             >
-              <Sparkles className="w-3.5 h-3.5 inline mr-1.5" />Recommendations
+              <Sparkles className="w-4 h-4 inline mr-2" />Recommendations
             </button>
             <button
               onClick={() => { setMenuCategory('All'); setShowMenu(true); sendMessage('Show me the menu'); }}
-              className="px-4 py-2 rounded-full bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition"
+              className="px-5 py-3 rounded-full bg-white border border-neutral-200 text-base font-bold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition shadow-sm"
             >
-              <Utensils className="w-3.5 h-3.5 inline mr-1.5" />Menu
+              <Utensils className="w-4 h-4 inline mr-2" />View Menu
             </button>
           </div>
         )}
@@ -820,8 +825,8 @@ export default function CustomerOrder() {
                     <ShoppingBag className="h-3.5 w-3.5" />View
                   </button>
                   <Button
-                    size="sm"
-                    className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
+                    size="lg"
+                    className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 shadow-md shadow-emerald-700/20"
                     onClick={() => (stage === 'browsing' ? openOrderSheet('place') : addOnsAfterOrder())}
                   >
                     {stage === 'browsing' ? 'Place order' : 'Add to tab'}
