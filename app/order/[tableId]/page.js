@@ -992,13 +992,43 @@ export default function CustomerOrder() {
                 <div className="text-xs text-emerald-100 mt-1">We will generate your ticket right after you confirm.</div>
               </div>
               <div className="p-6 space-y-4">
-                <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] text-emerald-900">
-                  {pendingItems?.length || cart.length ? (
-                    <span className="font-semibold">{(pendingItems || cart).length} items</span>
-                  ) : (
-                    <span className="text-emerald-700">Cart is empty</span>
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50/50 p-1">
+                  {(pendingItems || cart).map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 border-b border-neutral-100 last:border-0 bg-white m-1 rounded-lg">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="text-xs font-semibold truncate text-neutral-800">{item.name}</div>
+                        <div className="text-[10px] text-emerald-700 font-bold">${item.price.toFixed(2)}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button 
+                          onClick={() => {
+                            const current = pendingItems || cart;
+                            const next = current.map(x => x.id === item.id ? { ...x, qty: x.qty - 1 } : x).filter(x => x.qty > 0);
+                            setPendingItems(next);
+                            if (orderSheetMode === 'place') setCart(next);
+                          }}
+                          className="h-6 w-6 rounded-full bg-neutral-100 grid place-items-center hover:bg-neutral-200 text-neutral-600 font-bold"
+                        >-</button>
+                        <span className="text-xs font-bold w-4 text-center">{item.qty}</span>
+                        <button 
+                          onClick={() => {
+                            const current = pendingItems || cart;
+                            const next = current.map(x => x.id === item.id ? { ...x, qty: x.qty + 1 } : x);
+                            setPendingItems(next);
+                            if (orderSheetMode === 'place') setCart(next);
+                          }}
+                          className="h-6 w-6 rounded-full bg-emerald-100 grid place-items-center hover:bg-emerald-200 text-emerald-700 font-bold"
+                        >+</button>
+                      </div>
+                    </div>
+                  ))}
+                  {(pendingItems || cart).length === 0 && (
+                    <div className="p-3 text-center text-xs text-neutral-500">Cart is empty</div>
                   )}
-                  <span className="ml-2">${(pendingItems || cart).reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}</span>
+                  <div className="flex justify-between items-center p-3 text-sm font-bold bg-white m-1 rounded-lg border border-emerald-100 text-emerald-900">
+                    <span>Total</span>
+                    <span>${(pendingItems || cart).reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}</span>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-neutral-700">Allergy</label>

@@ -788,6 +788,19 @@ export default function CentralAdmin() {
                 >
                   Open full tenant view for server (waiter) accounts and more →
                 </Link>
+                <div className="pt-2">
+                  <Button 
+                    onClick={async () => {
+                      toast.loading('Sending credentials...', { id: 'resend' });
+                      const res = await fetch(`/api/restaurants/${showCredsFor.id}/resend-credentials`, { method: 'POST' });
+                      if (res.ok) toast.success('Credentials emailed to ' + (showCredsFor.email || 'restaurant owner'), { id: 'resend' });
+                      else toast.error('Failed to resend email', { id: 'resend' });
+                    }}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl h-10 font-semibold shadow-sm"
+                  >
+                    <Mail className="h-4 w-4 mr-2" /> Resend Credentials Email
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

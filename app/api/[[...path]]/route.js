@@ -8,7 +8,7 @@ import {
   tableToApi,
   orderToApi,
 } from '@/lib/supabase';
-import { llmChat, geminiWaiterChat } from '@/lib/llm';
+import { llmChat, universalWaiterChat } from '@/lib/llm';
 import { nluRespond } from '@/lib/nlu';
 import { sendRestaurantOnboardingEmail } from '@/lib/mailer';
 import {
@@ -30,13 +30,13 @@ async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, 
 
   let ai = null;
   try {
-    ai = await geminiWaiterChat({
+    ai = await universalWaiterChat({
       context: { restaurantName, menu, cart, allergy, preference, avoid, notes, stage, language },
       history,
       userMessage: message,
     });
   } catch (e) {
-    console.error('Gemini waiter failed, using NLU fallback:', e?.message || e);
+    console.error('Universal waiter failed, using NLU fallback:', e?.message || e);
   }
 
   if (!ai || !ai.reply) {
@@ -1185,6 +1185,30 @@ async function handler(request, { params }) {
         if (error) return safeErr('restaurant delete', error);
         return json({ ok: true });
       }
+    }
+
+    const resendMatch = path.match(/^restaurants\/([^\/]+)\/resend-credentials$/);
+    if (resendMatch && method === 'POST') {
+      const id = resendMatch[1];
+      const guard = requireSession(request, { roles: ['central'] });
+      if (!guard.ok) return guard.response;
+      
+      const { data, error } = await sb.from('restaurants').select('*').eq('id', id).maybeSingle();
+      if (error || !data) return err('Restaurant not found', 404);
+      
+      const { data: serverData } = await sb.from('servers').select('*').eq('restaurant_id', id);
+      const servers = (serverData || []).map(sv => ({
+         name: sv.name, userId: sv.user_id, password: sv.password 
+      }));
+
+      const restaurant = restaurantToApiWithCreds(data);
+      const onboardingData = {
+        ...onboardingPayload(restaurant),
+        serverCreds: servers,
+      };
+      
+      sendRestaurantOnboardingEmail(onboardingData).catch((e) => console.error('SMTP Background Error:', e?.message || e));
+      return json({ success: true, mailStatus: 'sent_to_background' });
     }
 
     // Per-restaurant aggregate endpoints used by the central admin detail page
