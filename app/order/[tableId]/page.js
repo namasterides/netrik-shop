@@ -754,7 +754,8 @@ export default function CustomerOrder() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {sending && (
             <div className="flex justify-start animate-in fade-in">
               <div className="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-100 shrink-0 mr-2 mt-auto mb-1 flex items-center justify-center">
