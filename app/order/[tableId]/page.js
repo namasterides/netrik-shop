@@ -30,6 +30,17 @@ const STORAGE_VERSION = 1;
 const STORAGE_PREFIX = 'netrik_ai_waiter';
 const buildStorageKey = (tableId) => (tableId ? `${STORAGE_PREFIX}:${tableId}` : null);
 
+const renderTextWithAnimatedEmojis = (text) => {
+  if (!text) return null;
+  const parts = String(text).split(/(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu);
+  return parts.map((part, i) => {
+    if (/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(part)) {
+      return <span key={i} className="emoji-pop inline-block">{part}</span>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+};
+
 export default function CustomerOrder() {
   const { tableId } = useParams();
   const storageKey = buildStorageKey(tableId);
@@ -526,6 +537,10 @@ export default function CustomerOrder() {
     setMessages((m) => [...m, { role: 'user', text }]);
     if (!textOverride) setInput('');
     setSending(true);
+    
+    // Generate an idempotency key for this chat request
+    const actionId = Math.random().toString(36).slice(2);
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -534,6 +549,7 @@ export default function CustomerOrder() {
           message: text,
           menu: menu.map((m) => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [] })),
           cart, allergy, preference, avoid, chefNotes, stage,
+          clientActionId: actionId,
         }),
       });
       const data = await res.json();
@@ -575,7 +591,9 @@ export default function CustomerOrder() {
         }
       }
     } catch (e) {
-      setMessages((m) => [...m, { role: 'assistant', text: 'Sorry, I lost connection for a moment. Could you say that again?' }]);
+      if (textOverride) setInput(textOverride); // Restore input if it was an explicit button click
+      else if (text) setInput(text); // Keep input for manual typing
+      setMessages((m) => [...m, { role: 'assistant', text: 'Sorry, I lost connection for a moment.', isError: true, userText: text }]);
     } finally {
       setSending(false);
     }
@@ -658,26 +676,37 @@ export default function CustomerOrder() {
 
         {/* Chat Messages Area */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 pt-4 hide-scrollbar scroll-smooth">
-          {messages.map((m, i) => (
+          {messages.map((m, i) => {
+            const showAvatar = m.role === 'assistant' && (i === 0 || messages[i - 1].role !== 'assistant' || messages[i - 1].isError);
+            return (
             <div
               key={i}
               className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}
             >
               <div className={`flex w-full ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {m.role === 'assistant' && (
-                  <div className="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-100 shrink-0 mr-2 mt-auto mb-1 flex items-center justify-center">
-                    <ChefHat className="w-3.5 h-3.5 text-emerald-700" />
+                  <div className={`w-7 h-7 shrink-0 mr-2 mt-auto mb-1 flex items-center justify-center ${showAvatar ? 'rounded-full bg-emerald-50 border border-emerald-100' : ''}`}>
+                    {showAvatar && <ChefHat className="w-3.5 h-3.5 text-emerald-700" />}
                   </div>
                 )}
                 {m.text && (
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${
-                      m.role === 'user'
-                        ? 'bg-emerald-700 text-white rounded-br-sm font-medium'
-                        : 'bg-neutral-100 text-neutral-800 rounded-bl-sm border border-neutral-200/60'
-                    }`}
-                  >
-                    {m.text}
+                  <div className="flex flex-col max-w-[80%]">
+                    <div
+                      className={`rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${
+                        m.role === 'user'
+                          ? 'bg-emerald-700 text-white rounded-br-sm font-medium'
+                          : m.isError 
+                            ? 'bg-rose-50 text-rose-800 border border-rose-200' 
+                            : 'bg-neutral-100 text-neutral-800 rounded-bl-sm border border-neutral-200/60'
+                      }`}
+                    >
+                      {renderTextWithAnimatedEmojis(m.text)}
+                    </div>
+                    {m.isError && (
+                      <button onClick={() => sendMessage(m.userText)} className="self-start mt-2 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-semibold rounded-full flex items-center gap-1 transition">
+                        <RotateCcw className="w-3 h-3"/> Retry
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -733,14 +762,15 @@ export default function CustomerOrder() {
               </div>
               <div className="bg-neutral-100 text-neutral-500 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center border border-neutral-200/60">
                 <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce delay-75" />
-                <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce delay-150" />
+                <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
+                <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
               </div>
             </div>
           )}
           <div ref={chatEndRef} className="h-2" />
         </div>
 
+        {/* Quick Action Chips */}
         {/* Quick Action Chips */}
         {stage === 'browsing' && !sending && cart.length === 0 && (
           <div className="px-4 pb-3 flex gap-2 overflow-x-auto hide-scrollbar whitespace-nowrap animate-in slide-in-from-bottom-4">
@@ -755,6 +785,23 @@ export default function CustomerOrder() {
               className="px-4 py-2 rounded-full bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition"
             >
               <Utensils className="w-3.5 h-3.5 inline mr-1.5" />Menu
+            </button>
+          </div>
+        )}
+
+        {stage === 'served' && !sending && order?.status !== 'paid' && (
+          <div className="px-4 pb-3 flex gap-2 overflow-x-auto hide-scrollbar whitespace-nowrap animate-in slide-in-from-bottom-4">
+            <button
+              onClick={() => sendMessage('Can I get the bill?')}
+              className="px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" />Get Bill
+            </button>
+            <button
+              onClick={() => sendMessage('Can I add a dessert?')}
+              className="px-4 py-2 rounded-full bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />Add Dessert
             </button>
           </div>
         )}

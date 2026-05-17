@@ -21,17 +21,55 @@ import { createCheckoutSession, getSessionStatus, handleWebhookEvent, verifyWebh
 
 // Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
 async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language }) {
+  const lowerMsg = String(message || '').toLowerCase().trim();
+  
+  // Adaptive Model Usage: Route simple intents directly to fast local NLU
+  if (/^(menu|show me the menu|what do you have|bill|check|checkout|pay)$/i.test(lowerMsg)) {
+    return nluRespond({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language });
+  }
+
+  let ai = null;
   try {
-    const ai = await geminiWaiterChat({
+    ai = await geminiWaiterChat({
       context: { restaurantName, menu, cart, allergy, preference, avoid, notes, stage, language },
       history,
       userMessage: message,
     });
-    if (ai && ai.reply) return ai;
   } catch (e) {
     console.error('Gemini waiter failed, using NLU fallback:', e?.message || e);
   }
-  return nluRespond({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language });
+
+  if (!ai || !ai.reply) {
+    ai = nluRespond({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language });
+  }
+
+  const actions = ai.actions || {};
+
+  // Guardrail: Payment only allowed if order is placed
+  if (actions.pay_now && stage === 'browsing') {
+    delete actions.pay_now;
+    ai.reply = "Please place your order first before paying.";
+  }
+
+  // Guardrail: State Machine Hardening
+  // Server is the source of truth for required questions before order placement
+  if (actions.place_order) {
+    if (!allergy || allergy === '(not asked yet)') {
+      delete actions.place_order;
+      ai.reply = "Before I send that to the kitchen, do you have any allergies I should know about? (or say 'none')";
+    } else if (!preference || preference === '(not asked yet)') {
+      delete actions.place_order;
+      ai.reply = "Got the allergy info. What do you *want* the chef to do? (e.g. extra cheese, well done, or 'none')";
+    } else if (!avoid || avoid === '(not asked yet)') {
+      delete actions.place_order;
+      ai.reply = "Anything you *don’t want* in the food? (e.g. no onions, or 'none')";
+    } else if (!notes || notes === '(not asked yet)') {
+      delete actions.place_order;
+      ai.reply = "Any final chef notes? (e.g. sauce on the side, or 'no')";
+    }
+  }
+
+  return ai;
 }
 
 const json = (data, status = 200) => NextResponse.json(data, { status });
@@ -911,11 +949,16 @@ async function handleDemoRequest(path, method, request) {
       sessionId, restaurantId, tableId, language = 'en',
       message = '', menu = [], cart = [], allergy = '', preference = '',
       avoid = '', chefNotes = '', stage = 'browsing',
+      clientActionId,
     } = body;
     const restaurant = db.restaurants.find((r) => r.id === restaurantId);
 
     const idx = db.chat_sessions.findIndex((s) => s.session_id === sessionId);
-    const prev = idx >= 0 ? db.chat_sessions[idx] : { history: [] };
+    const prev = idx >= 0 ? db.chat_sessions[idx] : { history: [], processed_actions: [] };
+
+    if (clientActionId && (prev.processed_actions || []).includes(clientActionId)) {
+      return json({ reply: "I already handled that request.", actions: {} });
+    }
 
     const { reply, actions } = await aiWaiterReply({
       message: clampStr(message, 2000),
@@ -935,7 +978,10 @@ async function handleDemoRequest(path, method, request) {
       { role: 'user', content: message },
       { role: 'assistant', content: reply },
     ].slice(-30);
-    const row = { session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, updated_at: nowIso() };
+    
+    const newProcessed = [...(prev.processed_actions || []), clientActionId].filter(Boolean).slice(-20);
+
+    const row = { session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, processed_actions: newProcessed, updated_at: nowIso() };
     if (idx >= 0) db.chat_sessions[idx] = row;
     else db.chat_sessions.push(row);
 
@@ -1794,10 +1840,20 @@ async function handler(request, { params }) {
         sessionId, restaurantId, tableId, language = 'en',
         message = '', menu = [], cart = [], allergy = '', preference = '',
         avoid = '', chefNotes = '', stage = 'browsing',
+        clientActionId,
       } = body;
       const { data: restaurant } = await sb.from('restaurants').select('name').eq('id', restaurantId).maybeSingle();
+      
+      // In a real Supabase setup you would add processed_actions to the table.
+      // Since we don't want to break the schema if it's not updated, we'll try to use it if present
+      // or fallback gracefully.
       const { data: session } = await sb.from('chat_sessions').select('*').eq('session_id', sessionId).maybeSingle();
       const history = (session?.history || []);
+      const processed = (session?.processed_actions || []);
+
+      if (clientActionId && processed.includes(clientActionId)) {
+        return json({ reply: "I already handled that request.", actions: {} });
+      }
 
       const { reply, actions } = await aiWaiterReply({
         message: clampStr(message, 2000),
@@ -1813,7 +1869,15 @@ async function handler(request, { params }) {
       });
 
       const newHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: reply }].slice(-30);
-      await sb.from('chat_sessions').upsert({ session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, updated_at: new Date().toISOString() }, { onConflict: 'session_id' });
+      const newProcessed = [...processed, clientActionId].filter(Boolean).slice(-20);
+      
+      try {
+        await sb.from('chat_sessions').upsert({ session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, processed_actions: newProcessed, updated_at: new Date().toISOString() }, { onConflict: 'session_id' });
+      } catch (err) {
+        // Fallback if processed_actions column doesn't exist
+        await sb.from('chat_sessions').upsert({ session_id: sessionId, restaurant_id: restaurantId, table_id: tableId, history: newHistory, updated_at: new Date().toISOString() }, { onConflict: 'session_id' });
+      }
+      
       return json({ reply, actions });
     }
 
