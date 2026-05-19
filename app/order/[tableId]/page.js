@@ -46,6 +46,43 @@ const EMOJI_SECTIONS = [
   },
 ];
 const EMOJI_RECENT_LIMIT = 12;
+const LAST_ORDER_KEY = 'netrik_ai_waiter:last_order';
+
+const CHEF_QUIZ = {
+  moods: [
+    { id: 'light', label: 'Light & fresh', emoji: '🥗' },
+    { id: 'comfort', label: 'Comforting', emoji: '🍲' },
+    { id: 'celebratory', label: 'Celebratory', emoji: '🥂' },
+    { id: 'adventurous', label: 'Adventurous', emoji: '🔥' },
+  ],
+  tastes: [
+    { id: 'spicy', label: 'Spicy', emoji: '🌶️' },
+    { id: 'smoky', label: 'Smoky', emoji: '🥩' },
+    { id: 'creamy', label: 'Creamy', emoji: '🧀' },
+    { id: 'tangy', label: 'Tangy', emoji: '🍋' },
+  ],
+  diet: [
+    { id: 'none', label: 'No preference', emoji: '😊' },
+    { id: 'vegetarian', label: 'Vegetarian', emoji: '🥦' },
+    { id: 'vegan', label: 'Vegan', emoji: '🌿' },
+    { id: 'gluten-free', label: 'Gluten-free', emoji: '🌾' },
+    { id: 'nut-free', label: 'Nut-free', emoji: '🥜' },
+  ],
+};
+
+const DIETARY_PRESETS = [
+  { id: 'vegan', label: 'Vegan' },
+  { id: 'vegetarian', label: 'Vegetarian' },
+  { id: 'gluten-free', label: 'Gluten-free' },
+  { id: 'nut-free', label: 'Nut-free' },
+];
+
+const ORDER_STEPS = [
+  { id: 'pending', label: 'Received' },
+  { id: 'preparing', label: 'Cooking' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'served', label: 'Served' },
+];
 
 const renderTextWithAnimatedEmojis = (text) => {
   if (!text) return null;
@@ -56,6 +93,60 @@ const renderTextWithAnimatedEmojis = (text) => {
     }
     return <span key={i}>{part}</span>;
   });
+};
+
+const normTag = (value) => String(value || '').trim().toLowerCase();
+const getTimeMood = (date = new Date()) => {
+  const hour = date.getHours();
+  if (hour < 11) return 'light';
+  if (hour < 16) return 'comfort';
+  if (hour < 20) return 'celebratory';
+  return 'adventurous';
+};
+
+const scoreMenuItem = ({ item, moodPick, tastePick, dietPick, cartTags, timeMood }) => {
+  const moodTags = (item.moodTags || []).map(normTag);
+  const tasteTags = (item.tasteTags || []).map(normTag);
+  const dietTags = (item.dietaryTags || []).map(normTag);
+  let score = 0;
+
+  if (dietPick && dietPick !== 'none') {
+    if (!dietTags.includes(dietPick)) return -1;
+    score += 2;
+  }
+  if (moodPick && moodTags.includes(moodPick)) score += 3;
+  if (tastePick && tasteTags.includes(tastePick)) score += 2;
+  if (timeMood && moodTags.includes(timeMood)) score += 1.5;
+  if (cartTags.size) {
+    for (const tag of cartTags) {
+      if (tasteTags.includes(tag) || moodTags.includes(tag)) score += 0.75;
+    }
+  }
+  if (item.description && item.description.length > 20) score += 0.25;
+  return score;
+};
+
+const pickSuggestedItems = ({ menu = [], cart = [], moodPick, tastePick, dietPick, limit = 3 }) => {
+  const cartIds = new Set((cart || []).map((c) => c.id));
+  const cartTags = new Set();
+  (cart || []).forEach((c) => {
+    const match = menu.find((m) => m.id === c.id);
+    (match?.moodTags || []).forEach((t) => cartTags.add(normTag(t)));
+    (match?.tasteTags || []).forEach((t) => cartTags.add(normTag(t)));
+  });
+  const timeMood = getTimeMood();
+
+  const scored = (menu || [])
+    .filter((item) => item.available !== false && !cartIds.has(item.id))
+    .map((item) => ({
+      item,
+      score: scoreMenuItem({ item, moodPick, tastePick, dietPick, cartTags, timeMood }),
+    }))
+    .filter((row) => row.score >= 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) return [];
+  return scored.slice(0, limit).map((row) => row.item);
 };
 
 export default function CustomerOrder() {
@@ -73,6 +164,12 @@ export default function CustomerOrder() {
   const [input, setInput] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState([]);
+  const [chefQuizOpen, setChefQuizOpen] = useState(false);
+  const [chefQuizStep, setChefQuizStep] = useState(0);
+  const [chefQuizAnswers, setChefQuizAnswers] = useState({ mood: '', taste: '', diet: 'none' });
+  const [dietaryFilter, setDietaryFilter] = useState([]);
+  const [activeVideoId, setActiveVideoId] = useState(null);
+  const [lastOrder, setLastOrder] = useState(null);
   const [sending, setSending] = useState(false);
   const [sessionId, setSessionId] = useState(() => 'sess_' + Math.random().toString(36).slice(2));
   const [order, setOrder] = useState(null);
@@ -82,6 +179,9 @@ export default function CustomerOrder() {
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const emojiWrapRef = useRef(null);
+  const statusRef = useRef(null);
+  const suggestRef = useRef(0);
+  const videoTimerRef = useRef(null);
   const reminderRef = useRef(0);
   const cartPromptedRef = useRef(false);
   const storedHasMessagesRef = useRef(false);
@@ -92,7 +192,7 @@ export default function CustomerOrder() {
   const [payment, setPayment] = useState(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [showBill, setShowBill] = useState(false);
-  const [burst, setBurst] = useState(false);
+  const [burst, setBurst] = useState(null);
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
   const [orderSheetMode, setOrderSheetMode] = useState('place');
   const [draftAllergy, setDraftAllergy] = useState('');
@@ -107,13 +207,18 @@ export default function CustomerOrder() {
     const resetUiState = () => {
       setInput('');
       setEmojiOpen(false);
+      setChefQuizOpen(false);
+      setChefQuizStep(0);
+      setChefQuizAnswers({ mood: '', taste: '', diet: 'none' });
       setSending(false);
-      setShowMenu(false);
+      closeMenu();
       setMenuCategory('All');
       setMenuSearch('');
+      setDietaryFilter([]);
+      setActiveVideoId(null);
       setPaymentOpen(false);
       setShowBill(false);
-      setBurst(false);
+      setBurst(null);
       setOrderSheetOpen(false);
       setOrderSheetMode('place');
       setPendingItems(null);
@@ -179,6 +284,15 @@ export default function CustomerOrder() {
 
     persistReadyRef.current = true;
   }, [tableId, storageKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_ORDER_KEY);
+      setLastOrder(raw ? JSON.parse(raw) : null);
+    } catch {
+      setLastOrder(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!tableId) return;
@@ -274,6 +388,43 @@ export default function CustomerOrder() {
     }
   }, [cart, stage]);
 
+  useEffect(() => {
+    if (!order?.status) return;
+    if (!statusRef.current) {
+      statusRef.current = order.status;
+      return;
+    }
+    if (order.status !== statusRef.current) {
+      if (order.status === 'preparing') {
+        setMessages((m) => [...m, { role: 'assistant', text: '👨‍🍳 Your order is now being prepared.' }]);
+      }
+      if (order.status === 'ready') {
+        setMessages((m) => [...m, { role: 'assistant', text: '✨ Your food is ready. Enjoy your meal! Want anything else, or should I bring the bill?' }]);
+        setBurst('ready');
+        setTimeout(() => setBurst(null), 2200);
+      }
+      if (order.status === 'served') {
+        setMessages((m) => [...m, { role: 'assistant', text: 'Hope you love it. I am here if you need anything else.' }]);
+      }
+      statusRef.current = order.status;
+    }
+  }, [order?.status]);
+
+  useEffect(() => {
+    if (!menu.length) return;
+    if (!cart.length) {
+      suggestRef.current = 0;
+      return;
+    }
+    if (stage !== 'browsing') return;
+    if (cart.length === suggestRef.current) return;
+    suggestRef.current = cart.length;
+    if (!(cart.length === 1 || cart.length % 3 === 0)) return;
+    const picks = pickSuggestedItems({ menu, cart, limit: 3 });
+    if (picks.length === 0) return;
+    setMessages((m) => [...m, { role: 'assistant', text: 'You might like these as well:', items: picks }]);
+  }, [cart, menu, stage]);
+
   // Poll order status
   useEffect(() => {
     if (!order) return;
@@ -292,7 +443,6 @@ export default function CustomerOrder() {
         }));
         if (r.order.status === 'ready' && stage === 'ordered') {
           setStage('served');
-          setMessages((m) => [...m, { role: 'assistant', text: '✨ Your food is ready. Enjoy your meal! Want anything else, or should I bring the bill?' }]);
         }
       }
     }, 4000);
@@ -335,15 +485,33 @@ export default function CustomerOrder() {
   const filteredMenu = useMemo(() => {
     let list = menu || [];
     if (menuCategory !== 'All') list = list.filter((m) => (m.category || 'Other') === menuCategory);
+    if (dietaryFilter.length > 0) {
+      list = list.filter((m) => {
+        const tags = (m.dietaryTags || []).map(normTag);
+        return dietaryFilter.every((t) => tags.includes(t));
+      });
+    }
     if (menuSearch.trim()) {
       const q = menuSearch.toLowerCase();
       list = list.filter((m) => (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q));
     }
     return list;
-  }, [menu, menuCategory, menuSearch]);
+  }, [menu, menuCategory, menuSearch, dietaryFilter]);
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
   const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart]);
+  const burstTitle = burst === 'ready' ? 'Food is ready' : 'Order placed';
+  const burstSubtitle = burst === 'ready' ? 'Your order is ready.' : 'The chef has your ticket.';
+  const canReorder = useMemo(() => {
+    if (!lastOrder || !restaurant) return false;
+    if (lastOrder.restaurantId !== restaurant.id) return false;
+    return Array.isArray(lastOrder.items) && lastOrder.items.length > 0;
+  }, [lastOrder, restaurant]);
+  const orderStepIndex = useMemo(() => {
+    if (!order?.status) return 0;
+    const idx = ORDER_STEPS.findIndex((s) => s.id === order.status);
+    return idx >= 0 ? idx : 0;
+  }, [order?.status]);
 
   const mergeItemsIntoCart = (baseCart, additions = []) => {
     const next = [...baseCart.map((x) => ({ ...x }))];
@@ -486,8 +654,18 @@ export default function CustomerOrder() {
     setPayment(null);
     setStage('ordered');
     setCart([]);
-    setBurst(true);
-    setTimeout(() => setBurst(false), 2800);
+    try {
+      const payload = {
+        restaurantId: restaurant.id,
+        orderId: data.order?.id,
+        createdAt: new Date().toISOString(),
+        items: (data.order?.items || []).map((i) => ({ id: i.id, qty: i.qty })),
+      };
+      localStorage.setItem(LAST_ORDER_KEY, JSON.stringify(payload));
+      setLastOrder(payload);
+    } catch {}
+    setBurst('order');
+    setTimeout(() => setBurst(null), 2800);
     setMessages((m) => [...m, { role: 'assistant', text: `🎉 Order confirmed. Ticket #${data.order.id.slice(0, 6).toUpperCase()} is live in the kitchen.` }]);
   };
 
@@ -561,6 +739,67 @@ export default function CustomerOrder() {
       return next.slice(0, EMOJI_RECENT_LIMIT);
     });
     inputRef.current?.focus();
+  };
+
+  const toggleDietary = (id) => {
+    setDietaryFilter((prev) => (
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
+    ));
+  };
+
+  const closeMenu = () => {
+    setShowMenu(false);
+    setActiveVideoId(null);
+  };
+
+  const startVideoPreview = (id) => {
+    if (videoTimerRef.current) clearTimeout(videoTimerRef.current);
+    setActiveVideoId(id);
+    videoTimerRef.current = setTimeout(() => setActiveVideoId(null), 8000);
+  };
+
+  const reorderLast = () => {
+    if (!lastOrder || !restaurant) return;
+    if (lastOrder.restaurantId !== restaurant.id) return;
+    const additions = (lastOrder.items || []).map((i) => ({ id: i.id, quantity: i.qty }));
+    const next = mergeItemsIntoCart(cart, additions);
+    if (next.length === cart.length) return toast.error('No items available from the last order');
+    setCart(next);
+    toast.success('Last order added to cart');
+  };
+
+  const startChefSurprise = () => {
+    if (!menu.length) return toast.error('Menu is still loading');
+    setChefQuizAnswers({ mood: '', taste: '', diet: 'none' });
+    setChefQuizStep(0);
+    setChefQuizOpen(true);
+  };
+
+  const finishChefSurprise = (answers) => {
+    setChefQuizOpen(false);
+    setMessages((m) => [...m, { role: 'user', text: "Chef's surprise, please." }]);
+    const picks = pickSuggestedItems({
+      menu,
+      cart,
+      moodPick: answers.mood,
+      tastePick: answers.taste,
+      dietPick: answers.diet,
+      limit: 3,
+    });
+    if (picks.length === 0) {
+      setMessages((m) => [...m, { role: 'assistant', text: 'I could not find a perfect match, but the menu is open if you want to browse.' }]);
+      setShowMenu(true);
+      return;
+    }
+    setMessages((m) => [...m, { role: 'assistant', text: 'Here is a chef-picked surprise based on your taste:', items: picks }]);
+  };
+
+  const handleChefPick = (kind, value) => {
+    const next = { ...chefQuizAnswers, [kind]: value };
+    setChefQuizAnswers(next);
+    if (kind === 'mood') setChefQuizStep(1);
+    else if (kind === 'taste') setChefQuizStep(2);
+    else finishChefSurprise(next);
   };
 
   const sendMessage = async (textOverride = null) => {
@@ -722,6 +961,40 @@ export default function CustomerOrder() {
 
         {/* Chat Messages Area */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 pt-4 hide-scrollbar scroll-smooth">
+          {order && stage !== 'done' && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">Order tracker</div>
+                  <div className="text-sm font-semibold text-neutral-800">Status: {order.status}</div>
+                </div>
+                {order?.id && (
+                  <div className="text-[10px] text-neutral-400 font-semibold">#{order.id.slice(0, 6).toUpperCase()}</div>
+                )}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                {ORDER_STEPS.map((step, idx) => (
+                  <div key={step.id} className="flex items-center flex-1">
+                    <div
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        idx <= orderStepIndex ? 'bg-emerald-600' : 'bg-neutral-200'
+                      } ${idx === orderStepIndex ? 'animate-pulse' : ''}`}
+                    />
+                    <div className="ml-2 text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
+                      {step.label}
+                    </div>
+                    {idx < ORDER_STEPS.length - 1 && (
+                      <div
+                        className={`mx-2 h-px flex-1 ${
+                          idx < orderStepIndex ? 'bg-emerald-200' : 'bg-neutral-200'
+                        }`}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {messages.map((m, i) => {
             const showAvatar = m.role === 'assistant' && (i === 0 || messages[i - 1].role !== 'assistant' || messages[i - 1].isError);
             return (
@@ -828,11 +1101,25 @@ export default function CustomerOrder() {
               <Sparkles className="w-4 h-4 inline mr-2" />Recommendations
             </button>
             <button
+              onClick={startChefSurprise}
+              className="px-5 py-3 rounded-full bg-white border border-neutral-200 text-base font-bold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition shadow-sm"
+            >
+              <ChefHat className="w-4 h-4 inline mr-2" />Chef's Surprise
+            </button>
+            <button
               onClick={() => { setMenuCategory('All'); setShowMenu(true); sendMessage('Show me the menu'); }}
               className="px-5 py-3 rounded-full bg-white border border-neutral-200 text-base font-bold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition shadow-sm"
             >
               <Utensils className="w-4 h-4 inline mr-2" />View Menu
             </button>
+            {canReorder && (
+              <button
+                onClick={reorderLast}
+                className="px-5 py-3 rounded-full bg-neutral-900 text-white text-base font-bold hover:bg-neutral-800 transition shadow-sm"
+              >
+                <ShoppingBag className="w-4 h-4 inline mr-2" />Reorder last
+              </button>
+            )}
           </div>
         )}
 
@@ -977,10 +1264,75 @@ export default function CustomerOrder() {
           </div>
         </div>
 
+        {chefQuizOpen && (
+          <div className="absolute inset-0 z-40">
+            <div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm" onClick={() => setChefQuizOpen(false)} />
+            <div className="absolute bottom-0 left-0 right-0 max-h-[80%] rounded-t-3xl bg-white overflow-hidden shadow-2xl">
+              <div className="border-b border-neutral-200 px-5 py-4 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.22em] text-emerald-700 font-bold">Chef's Surprise</div>
+                  <div className="font-display text-lg font-bold tracking-tight">Tell me your vibe</div>
+                  <div className="text-xs text-neutral-500">Step {chefQuizStep + 1} of 3</div>
+                </div>
+                <button
+                  onClick={() => (chefQuizStep > 0 ? setChefQuizStep((s) => s - 1) : setChefQuizOpen(false))}
+                  className="text-xs font-semibold text-neutral-500 hover:text-neutral-800"
+                >
+                  {chefQuizStep > 0 ? 'Back' : 'Close'}
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {chefQuizStep === 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {CHEF_QUIZ.moods.map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleChefPick('mood', opt.id)}
+                        className="rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-left hover:border-emerald-300 hover:shadow-sm transition"
+                      >
+                        <div className="text-2xl mb-2">{opt.emoji}</div>
+                        <div className="text-sm font-semibold text-neutral-900">{opt.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {chefQuizStep === 1 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {CHEF_QUIZ.tastes.map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleChefPick('taste', opt.id)}
+                        className="rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-left hover:border-emerald-300 hover:shadow-sm transition"
+                      >
+                        <div className="text-2xl mb-2">{opt.emoji}</div>
+                        <div className="text-sm font-semibold text-neutral-900">{opt.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {chefQuizStep === 2 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {CHEF_QUIZ.diet.map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleChefPick('diet', opt.id)}
+                        className="rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-left hover:border-emerald-300 hover:shadow-sm transition"
+                      >
+                        <div className="text-2xl mb-2">{opt.emoji}</div>
+                        <div className="text-sm font-semibold text-neutral-900">{opt.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Visual Menu Overlay */}
         {showMenu && (
           <div className="absolute inset-0 z-40">
-            <div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm" onClick={() => setShowMenu(false)} />
+            <div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm" onClick={closeMenu} />
             <div className="absolute bottom-0 left-0 right-0 max-h-[82%] rounded-t-3xl bg-white overflow-hidden flex flex-col shadow-2xl">
               <div className="shrink-0 bg-white border-b border-neutral-200 px-4 pt-4 pb-3">
                 <div className="flex items-center justify-between mb-3">
@@ -991,7 +1343,7 @@ export default function CustomerOrder() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setShowMenu(false)}
+                    onClick={closeMenu}
                     className="h-9 w-9 rounded-full bg-neutral-100 grid place-items-center hover:bg-neutral-200 transition"
                   >
                     <X className="h-4 w-4" />
@@ -1005,6 +1357,32 @@ export default function CustomerOrder() {
                     placeholder="Search dishes…"
                     className="w-full bg-neutral-100 border border-neutral-200 rounded-full h-10 pl-9 pr-4 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-emerald-700 transition"
                   />
+                </div>
+                <div className="mt-3 flex gap-1.5 overflow-x-auto hide-scrollbar">
+                  {DIETARY_PRESETS.map((preset) => {
+                    const active = dietaryFilter.includes(preset.id);
+                    return (
+                      <button
+                        key={preset.id}
+                        onClick={() => toggleDietary(preset.id)}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-semibold border transition ${
+                          active
+                            ? 'bg-neutral-900 text-white border-neutral-900'
+                            : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                  {dietaryFilter.length > 0 && (
+                    <button
+                      onClick={() => setDietaryFilter([])}
+                      className="shrink-0 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-semibold border border-neutral-200 text-neutral-500 hover:bg-neutral-100"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
                 <div className="mt-3 flex gap-1.5 overflow-x-auto hide-scrollbar">
                   {categories.map((cat) => (
@@ -1025,13 +1403,34 @@ export default function CustomerOrder() {
               <div className="flex-1 overflow-y-auto px-3 py-3 bg-neutral-50/40">
                 <div className="grid grid-cols-2 gap-3">
                   {filteredMenu.map((item) => (
-                    <div key={item.id} className="rounded-2xl bg-white border border-neutral-200 overflow-hidden flex flex-col">
+                    <div
+                      key={item.id}
+                      className="rounded-2xl bg-white border border-neutral-200 overflow-hidden flex flex-col"
+                      onMouseEnter={() => item.videoUrl && startVideoPreview(item.id)}
+                      onMouseLeave={() => item.videoUrl && setActiveVideoId(null)}
+                    >
                       <div className="relative h-24 overflow-hidden shrink-0 bg-neutral-100">
-                        <img src={item.image || FALLBACK_MENU_IMAGE} alt={item.name} className="w-full h-full object-cover" />
+                        {item.videoUrl && activeVideoId === item.id ? (
+                          <video
+                            src={item.videoUrl}
+                            muted
+                            playsInline
+                            autoPlay
+                            loop
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <img src={item.image || FALLBACK_MENU_IMAGE} alt={item.name} className="w-full h-full object-cover" />
+                        )}
                         {item.videoUrl && (
-                          <div className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] text-emerald-800 font-semibold">
-                            <PlayCircle className="h-2.5 w-2.5" /> Video
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => (activeVideoId === item.id ? setActiveVideoId(null) : startVideoPreview(item.id))}
+                            className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[9px] text-emerald-800 font-semibold hover:bg-white"
+                          >
+                            <PlayCircle className="h-2.5 w-2.5" /> {activeVideoId === item.id ? 'Playing' : 'Preview'}
+                          </button>
                         )}
                       </div>
                       <div className="p-3 flex-1 flex flex-col">
@@ -1063,7 +1462,7 @@ export default function CustomerOrder() {
                   <Button
                     size="sm"
                     className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
-                    onClick={() => { setShowMenu(false); if (stage === 'browsing') openOrderSheet('place'); else addOnsAfterOrder(); }}
+                    onClick={() => { closeMenu(); if (stage === 'browsing') openOrderSheet('place'); else addOnsAfterOrder(); }}
                   >
                     {stage === 'browsing' ? 'Place order' : 'Add to tab'}
                   </Button>
@@ -1260,9 +1659,9 @@ export default function CustomerOrder() {
             <div className="absolute inset-0 bg-emerald-900/30 animate-in fade-in duration-200" />
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
               <div className="text-7xl mb-3 animate-bounce">🎉</div>
-              <div className="font-display text-2xl font-extrabold text-white tracking-tight drop-shadow">Order placed</div>
-              <div className="text-sm text-emerald-100 mt-1">The chef has your ticket.</div>
-              {order?.id && (
+              <div className="font-display text-2xl font-extrabold text-white tracking-tight drop-shadow">{burstTitle}</div>
+              <div className="text-sm text-emerald-100 mt-1">{burstSubtitle}</div>
+              {burst === 'order' && order?.id && (
                 <div className="text-xs text-emerald-100/80 mt-1">Ticket #{order.id.slice(0, 6).toUpperCase()}</div>
               )}
             </div>
