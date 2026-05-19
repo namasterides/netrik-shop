@@ -22,6 +22,7 @@ import {
   FileText,
   AlertTriangle,
   Pencil,
+  Smile,
 } from 'lucide-react';
 
 const FALLBACK_MENU_IMAGE = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
@@ -29,6 +30,22 @@ const BRAND_LOGO_PATH = '/brand/original/netrikshop%20update%20logo.png';
 const STORAGE_VERSION = 1;
 const STORAGE_PREFIX = 'netrik_ai_waiter';
 const buildStorageKey = (tableId) => (tableId ? `${STORAGE_PREFIX}:${tableId}` : null);
+
+const EMOJI_SECTIONS = [
+  {
+    label: 'Smileys',
+    emojis: ['😀', '😁', '😊', '😋', '😍', '🥳', '🤩', '😎', '🤗', '😂'],
+  },
+  {
+    label: 'Food',
+    emojis: ['🍕', '🍔', '🍟', '🌮', '🍜', '🍣', '🥗', '🍰', '🍩', '🍹'],
+  },
+  {
+    label: 'Reactions',
+    emojis: ['❤️', '🔥', '✨', '🎉', '🙌', '👍', '👏', '🙏', '✅', '💯'],
+  },
+];
+const EMOJI_RECENT_LIMIT = 12;
 
 const renderTextWithAnimatedEmojis = (text) => {
   if (!text) return null;
@@ -54,6 +71,8 @@ export default function CustomerOrder() {
   const [chefNotes, setChefNotes] = useState('');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [recentEmojis, setRecentEmojis] = useState([]);
   const [sending, setSending] = useState(false);
   const [sessionId, setSessionId] = useState(() => 'sess_' + Math.random().toString(36).slice(2));
   const [order, setOrder] = useState(null);
@@ -61,6 +80,8 @@ export default function CustomerOrder() {
   const [rating, setRating] = useState(5);
   const [feedback, setFeedback] = useState('');
   const chatEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const emojiWrapRef = useRef(null);
   const reminderRef = useRef(0);
   const cartPromptedRef = useRef(false);
   const storedHasMessagesRef = useRef(false);
@@ -85,6 +106,7 @@ export default function CustomerOrder() {
     if (!tableId || !storageKey) return;
     const resetUiState = () => {
       setInput('');
+      setEmojiOpen(false);
       setSending(false);
       setShowMenu(false);
       setMenuCategory('All');
@@ -174,7 +196,7 @@ export default function CustomerOrder() {
           setMessages([
             {
               role: 'assistant',
-              text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, place your order and pay — all right here in this chat.`,
+              text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, place your order and pay — all right here in this chat. You can also tap the emoji button to add reactions.`,
             },
           ]);
         }
@@ -230,6 +252,15 @@ export default function CustomerOrder() {
   ]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const handleClick = (event) => {
+      if (!emojiWrapRef.current?.contains(event.target)) setEmojiOpen(false);
+    };
+    window.addEventListener('mousedown', handleClick);
+    return () => window.removeEventListener('mousedown', handleClick);
+  }, [emojiOpen]);
 
   useEffect(() => {
     if (stage !== 'browsing') return;
@@ -523,9 +554,19 @@ export default function CustomerOrder() {
     setTimeout(() => { try { window.close(); } catch {} }, 1500);
   };
 
+  const addEmoji = (emoji) => {
+    setInput((prev) => `${prev}${emoji}`);
+    setRecentEmojis((prev) => {
+      const next = [emoji, ...prev.filter((e) => e !== emoji)];
+      return next.slice(0, EMOJI_RECENT_LIMIT);
+    });
+    inputRef.current?.focus();
+  };
+
   const sendMessage = async (textOverride = null) => {
     const text = textOverride || input.trim();
     if (!text || sending) return;
+    if (emojiOpen) setEmojiOpen(false);
     const lower = text.toLowerCase();
     if (stage === 'served' && /^(no|nope|nothing|that's all|thats all|bill|check)/i.test(lower)) {
       setMessages((m) => [...m, { role: 'user', text }]);
@@ -863,13 +904,67 @@ export default function CustomerOrder() {
 
         {/* Input Area */}
         <div className="flex-none p-4 bg-white border-t border-neutral-200 pb-safe z-20">
-          <div className="relative flex items-center">
+          <div ref={emojiWrapRef} className="relative flex items-center">
+            <button
+              type="button"
+              onClick={() => setEmojiOpen((v) => !v)}
+              disabled={sending || stage === 'paying' || stage === 'feedback' || stage === 'done'}
+              className="absolute left-1.5 h-9 w-9 flex items-center justify-center rounded-full bg-neutral-100 border border-neutral-200 text-neutral-600 hover:text-emerald-700 hover:border-emerald-200 hover:bg-white transition disabled:opacity-40"
+              aria-label="Open emoji picker"
+            >
+              <Smile className="h-4 w-4" />
+            </button>
+            {emojiOpen && (
+              <div className="absolute bottom-14 left-0 right-0 z-30">
+                <div className="rounded-2xl border border-neutral-200 bg-white/95 backdrop-blur-xl shadow-lg p-3 max-h-64 overflow-y-auto">
+                  {recentEmojis.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 font-semibold">Recent</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {recentEmojis.map((emoji, idx) => (
+                          <button
+                            key={`recent-${emoji}-${idx}`}
+                            type="button"
+                            onClick={() => addEmoji(emoji)}
+                            className="emoji-chip h-9 w-9 rounded-xl border border-neutral-200 bg-neutral-50 text-lg grid place-items-center hover:bg-white hover:border-emerald-200 transition"
+                            style={{ animationDelay: `${(idx % 6) * 0.08}s` }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    {EMOJI_SECTIONS.map((section, sectionIndex) => (
+                      <div key={section.label} className={sectionIndex === 0 ? '' : 'pt-2 border-t border-neutral-100'}>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 font-semibold">{section.label}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {section.emojis.map((emoji, idx) => (
+                            <button
+                              key={`${section.label}-${emoji}`}
+                              type="button"
+                              onClick={() => addEmoji(emoji)}
+                              className="emoji-chip h-9 w-9 rounded-xl border border-neutral-200 bg-neutral-50 text-lg grid place-items-center hover:bg-white hover:border-emerald-200 transition"
+                              style={{ animationDelay: `${(idx % 8) * 0.06}s` }}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <Input
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
               placeholder="Type your order or question…"
-              className="w-full bg-neutral-100 border-neutral-200 text-[15px] h-12 rounded-full pl-5 pr-12 focus-visible:ring-emerald-700 focus-visible:border-emerald-700 placeholder:text-neutral-400"
+              className="w-full bg-neutral-100 border-neutral-200 text-[15px] h-12 rounded-full pl-12 pr-12 focus-visible:ring-emerald-700 focus-visible:border-emerald-700 placeholder:text-neutral-400"
               disabled={sending || stage === 'paying' || stage === 'feedback' || stage === 'done'}
             />
             <button

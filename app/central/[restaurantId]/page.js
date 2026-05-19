@@ -186,6 +186,7 @@ export default function RestaurantDetail() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [form, setForm] = useState(null);
   const [orderSearch, setOrderSearch] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem('netrik_user') || 'null');
@@ -271,6 +272,21 @@ export default function RestaurantDetail() {
     setSupportText('');
     toast.success('Message sent');
     loadSupport();
+  };
+
+  const resendCredentials = async () => {
+    if (!restaurant?.email) return toast.error('Owner email is missing');
+    setResendLoading(true);
+    try {
+      const res = await fetch(`/api/restaurants/${restaurantId}/resend-credentials`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to resend credentials');
+      toast.success(`Credentials sent to ${restaurant.email}`);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to resend credentials');
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const openEdit = () => {
@@ -554,6 +570,29 @@ export default function RestaurantDetail() {
 
           {/* CREDENTIALS */}
           <TabsContent value="credentials" className="mt-5 space-y-5">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm">Resend owner credentials</div>
+                    <div className="text-xs text-neutral-500">
+                      Send the latest login details to {restaurant.email || 'the owner email on file'}.
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={resendCredentials}
+                  disabled={resendLoading || !restaurant.email}
+                  className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white"
+                >
+                  {resendLoading ? 'Sending…' : 'Resend email'}
+                </Button>
+              </div>
+            </div>
             <div>
               <div className="font-display font-bold text-lg mb-3 tracking-tight">Management accounts</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

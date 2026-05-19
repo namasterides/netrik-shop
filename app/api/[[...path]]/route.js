@@ -543,6 +543,27 @@ async function handleDemoRequest(path, method, request) {
     }
   }
 
+  const resendMatch = path.match(/^restaurants\/([^\/]+)\/resend-credentials$/);
+  if (resendMatch && method === 'POST') {
+    const id = resendMatch[1];
+    const guard = requireSession(request, { roles: ['central'] });
+    if (!guard.ok) return guard.response;
+    const idx = db.restaurants.findIndex((r) => r.id === id);
+    if (idx === -1) return err('Restaurant not found', 404);
+
+    const restaurant = restaurantToApiWithCreds(db.restaurants[idx]);
+    const servers = (db.servers || [])
+      .filter((s) => s.restaurant_id === id)
+      .map((sv) => ({ name: sv.name, userId: sv.user_id, password: sv.password }));
+
+    const onboardingData = {
+      ...onboardingPayload(restaurant),
+      serverCreds: servers,
+    };
+    sendRestaurantOnboardingEmail(onboardingData).catch((e) => console.error('SMTP Background Error:', e?.message || e));
+    return json({ success: true, mailStatus: 'sent_to_background' });
+  }
+
   // ============ MENU ============
   if (path === 'menu' && method === 'GET') {
     const url = new URL(request.url);
