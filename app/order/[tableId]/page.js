@@ -244,6 +244,64 @@ export default function CustomerOrder() {
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [pendingItems, setPendingItems] = useState(null);
 
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set((menu || []).map((m) => m.category || 'Other')));
+    return ['All', ...unique];
+  }, [menu]);
+
+  const filteredMenu = useMemo(() => {
+    let list = menu || [];
+    if (menuCategory !== 'All') list = list.filter((m) => (m.category || 'Other') === menuCategory);
+    if (dietaryFilter.length > 0) {
+      list = list.filter((m) => {
+        const tags = (m.dietaryTags || []).map(normTag);
+        return dietaryFilter.every((t) => tags.includes(t));
+      });
+    }
+    if (menuSearch.trim()) {
+      const q = menuSearch.toLowerCase();
+      list = list.filter((m) => (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q));
+    }
+    return list;
+  }, [menu, menuCategory, menuSearch, dietaryFilter]);
+
+  const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
+  const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart]);
+  const uiLang = language === 'es' ? 'es' : 'en';
+  const baseTotal = Number(order?.total || 0);
+  const tipAmount = useMemo(() => {
+    const existing = Number(order?.tipAmount || 0);
+    if (existing > 0) return existing;
+    if (tipMode === 'custom') {
+      const raw = Number.parseFloat(tipCustom || '');
+      return Number.isFinite(raw) && raw >= 0 ? Math.round(raw * 100) / 100 : 0;
+    }
+    if (!tipPercent) return 0;
+    return Math.round(baseTotal * (tipPercent / 100) * 100) / 100;
+  }, [order?.tipAmount, tipMode, tipCustom, tipPercent, baseTotal]);
+  const payTotal = useMemo(() => {
+    const withTip = Number(order?.totalWithTip || 0);
+    if (withTip > 0) return withTip;
+    return Math.round((baseTotal + tipAmount) * 100) / 100;
+  }, [order?.totalWithTip, baseTotal, tipAmount]);
+  const perPersonTotal = useMemo(() => {
+    const split = Math.max(1, splitCount || 1);
+    return Math.round((payTotal / split) * 100) / 100;
+  }, [payTotal, splitCount]);
+  const needsFollowup = (rating && rating <= 2) || (npsScore !== null && npsScore <= 6);
+  const burstTitle = burst === 'ready' ? 'Food is ready' : 'Order placed';
+  const burstSubtitle = burst === 'ready' ? 'Your order is ready.' : 'The chef has your ticket.';
+  const canReorder = useMemo(() => {
+    if (!lastOrder || !restaurant) return false;
+    if (lastOrder.restaurantId !== restaurant.id) return false;
+    return Array.isArray(lastOrder.items) && lastOrder.items.length > 0;
+  }, [lastOrder, restaurant]);
+  const orderStepIndex = useMemo(() => {
+    if (!order?.status) return 0;
+    const idx = ORDER_STEPS.findIndex((s) => s.id === order.status);
+    return idx >= 0 ? idx : 0;
+  }, [order?.status]);
+
   useEffect(() => {
     if (!tableId || !storageKey) return;
     const resetUiState = () => {
@@ -562,64 +620,6 @@ export default function CustomerOrder() {
     const id = setInterval(poll, 3000);
     return () => { active = false; clearInterval(id); };
   }, [order, stage]);
-
-  const categories = useMemo(() => {
-    const unique = Array.from(new Set((menu || []).map((m) => m.category || 'Other')));
-    return ['All', ...unique];
-  }, [menu]);
-
-  const filteredMenu = useMemo(() => {
-    let list = menu || [];
-    if (menuCategory !== 'All') list = list.filter((m) => (m.category || 'Other') === menuCategory);
-    if (dietaryFilter.length > 0) {
-      list = list.filter((m) => {
-        const tags = (m.dietaryTags || []).map(normTag);
-        return dietaryFilter.every((t) => tags.includes(t));
-      });
-    }
-    if (menuSearch.trim()) {
-      const q = menuSearch.toLowerCase();
-      list = list.filter((m) => (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q));
-    }
-    return list;
-  }, [menu, menuCategory, menuSearch, dietaryFilter]);
-
-  const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
-  const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart]);
-  const uiLang = language === 'es' ? 'es' : 'en';
-  const baseTotal = Number(order?.total || 0);
-  const tipAmount = useMemo(() => {
-    const existing = Number(order?.tipAmount || 0);
-    if (existing > 0) return existing;
-    if (tipMode === 'custom') {
-      const raw = Number.parseFloat(tipCustom || '');
-      return Number.isFinite(raw) && raw >= 0 ? Math.round(raw * 100) / 100 : 0;
-    }
-    if (!tipPercent) return 0;
-    return Math.round(baseTotal * (tipPercent / 100) * 100) / 100;
-  }, [order?.tipAmount, tipMode, tipCustom, tipPercent, baseTotal]);
-  const payTotal = useMemo(() => {
-    const withTip = Number(order?.totalWithTip || 0);
-    if (withTip > 0) return withTip;
-    return Math.round((baseTotal + tipAmount) * 100) / 100;
-  }, [order?.totalWithTip, baseTotal, tipAmount]);
-  const perPersonTotal = useMemo(() => {
-    const split = Math.max(1, splitCount || 1);
-    return Math.round((payTotal / split) * 100) / 100;
-  }, [payTotal, splitCount]);
-  const needsFollowup = (rating && rating <= 2) || (npsScore !== null && npsScore <= 6);
-  const burstTitle = burst === 'ready' ? 'Food is ready' : 'Order placed';
-  const burstSubtitle = burst === 'ready' ? 'Your order is ready.' : 'The chef has your ticket.';
-  const canReorder = useMemo(() => {
-    if (!lastOrder || !restaurant) return false;
-    if (lastOrder.restaurantId !== restaurant.id) return false;
-    return Array.isArray(lastOrder.items) && lastOrder.items.length > 0;
-  }, [lastOrder, restaurant]);
-  const orderStepIndex = useMemo(() => {
-    if (!order?.status) return 0;
-    const idx = ORDER_STEPS.findIndex((s) => s.id === order.status);
-    return idx >= 0 ? idx : 0;
-  }, [order?.status]);
 
   const mergeItemsIntoCart = (baseCart, additions = []) => {
     const next = [...baseCart.map((x) => ({ ...x }))];
