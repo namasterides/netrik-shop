@@ -95,6 +95,39 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 7. ADD TIP + SPLIT FIELDS TO ORDERS
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'tip_amount'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN tip_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'tip_percent'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN tip_percent NUMERIC(5,2);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'split_count'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN split_count INT DEFAULT 1;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'total_with_tip'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN total_with_tip NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+END $$;
+
+-- ============================================
 
 -- 5. CREATE FUNCTION TO AUTO-UPDATE updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -155,6 +188,7 @@ CREATE TABLE IF NOT EXISTS feedback (
   table_id TEXT,
   order_id TEXT,
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  nps INTEGER,
   comment TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -173,6 +207,39 @@ CREATE POLICY "Allow read access to feedback" ON feedback
 -- RLS Policy: Allow insert for service role
 CREATE POLICY "Allow insert for service role on feedback" ON feedback
   FOR INSERT WITH CHECK (true);
+
+-- ============================================
+-- 7. SUPPORT MESSAGES METADATA
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'support_messages' AND column_name = 'table_id'
+  ) THEN
+    ALTER TABLE support_messages ADD COLUMN table_id TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'support_messages' AND column_name = 'order_id'
+  ) THEN
+    ALTER TABLE support_messages ADD COLUMN order_id TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'support_messages' AND column_name = 'priority'
+  ) THEN
+    ALTER TABLE support_messages ADD COLUMN priority TEXT DEFAULT 'normal';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'support_messages' AND column_name = 'source'
+  ) THEN
+    ALTER TABLE support_messages ADD COLUMN source TEXT DEFAULT 'dashboard';
+  END IF;
+END $$;
 
 -- ============================================
 -- DONE! Your Supabase database is now ready

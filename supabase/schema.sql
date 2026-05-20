@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS public.orders (
   table_number  TEXT NOT NULL,
   items         JSONB NOT NULL DEFAULT '[]',
   total         NUMERIC(10,2) NOT NULL DEFAULT 0,
+  tip_amount    NUMERIC(10,2) NOT NULL DEFAULT 0,
+  tip_percent   NUMERIC(5,2),
+  split_count   INT DEFAULT 1,
+  total_with_tip NUMERIC(10,2) NOT NULL DEFAULT 0,
   status        TEXT NOT NULL DEFAULT 'pending', -- pending|preparing|ready|served|paid|cancelled
   allergy       TEXT DEFAULT '',
   spicy_level   TEXT DEFAULT '',
@@ -118,6 +122,10 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_created_at TIMESTAMPT
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS preference TEXT DEFAULT '';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS avoid TEXT DEFAULT '';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_percent NUMERIC(5,2);
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS split_count INT DEFAULT 1;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS total_with_tip NUMERIC(10,2) NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_orders_restaurant ON public.orders(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_table      ON public.orders(table_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status     ON public.orders(restaurant_id, status);
@@ -143,10 +151,34 @@ CREATE TABLE IF NOT EXISTS public.feedback (
   table_id      UUID REFERENCES public.rest_tables(id) ON DELETE CASCADE,
   order_id      UUID REFERENCES public.orders(id) ON DELETE CASCADE,
   rating        INT,
+  nps           INT,
   comment       TEXT DEFAULT '',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_restaurant ON public.feedback(restaurant_id);
+ALTER TABLE public.feedback ADD COLUMN IF NOT EXISTS nps INT;
+ALTER TABLE public.feedback DISABLE ROW LEVEL SECURITY;
+
+-- =========================================================
+-- SUPPORT MESSAGES
+-- =========================================================
+CREATE TABLE IF NOT EXISTS public.support_messages (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  restaurant_id UUID REFERENCES public.restaurants(id) ON DELETE CASCADE,
+  table_id      UUID REFERENCES public.rest_tables(id) ON DELETE SET NULL,
+  order_id      UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+  sender        TEXT DEFAULT 'restaurant',
+  message       TEXT DEFAULT '',
+  priority      TEXT DEFAULT 'normal',
+  source        TEXT DEFAULT 'dashboard',
+  read          BOOLEAN DEFAULT false,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS table_id UUID;
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS order_id UUID;
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal';
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard';
+ALTER TABLE public.support_messages DISABLE ROW LEVEL SECURITY;
 
 -- =========================================================
 -- DISABLE RLS (we handle auth in application layer; key is server-only)

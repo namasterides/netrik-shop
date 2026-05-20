@@ -172,7 +172,7 @@ const buildUpiPayment = (row) => ({
   reference: row.payment_reference || '',
   vpa: row.payment_vpa || DEMO_UPI_VPA,
   payee: DEMO_UPI_PAYEE,
-  amount: toAmount(row.total),
+  amount: toAmount(row.total_with_tip ?? row.total),
   status: row.payment_status || (row.status === 'paid' ? 'paid' : 'unpaid'),
   upiUri: row.payment_qr || '',
   createdAt: row.payment_created_at || null,
@@ -188,7 +188,7 @@ const ensureDemoUpiPayment = (row) => {
     row.payment_qr = buildUpiUri({
       vpa: row.payment_vpa,
       name: DEMO_UPI_PAYEE,
-      amount: toAmount(row.total),
+      amount: toAmount(row.total_with_tip ?? row.total),
       reference: row.payment_reference,
     });
   }
@@ -724,6 +724,10 @@ async function handleDemoRequest(path, method, request) {
       table_number: tbl.number,
       items,
       total,
+      tip_amount: 0,
+      tip_percent: null,
+      split_count: 1,
+      total_with_tip: total,
       status: 'pending',
       allergy: clampStr(body.allergy, 240),
       spicy_level: clampStr(body.spicyLevel, 40),
@@ -841,12 +845,14 @@ async function handleDemoRequest(path, method, request) {
   if (path === 'feedback' && method === 'POST') {
     const body = await request.json();
     const rating = parseInt(body.rating, 10);
+    const nps = parseInt(body.nps, 10);
     db.feedback.push({
       id: makeId('fb'),
       restaurant_id: body.restaurantId,
       table_id: body.tableId,
       order_id: body.orderId,
       rating: Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null,
+      nps: Number.isFinite(nps) && nps >= 0 && nps <= 10 ? nps : null,
       comment: clampStr(body.comment, 1000),
       created_at: nowIso(),
     });
@@ -865,16 +871,28 @@ async function handleDemoRequest(path, method, request) {
     return json({ messages: msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) });
   }
   if (path === 'support' && method === 'POST') {
-    const guard = requireSession(request, { roles: ['central', 'manager'] });
-    if (!guard.ok) return guard.response;
     const body = await request.json();
-    const scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+    let scopedId = null;
+    if (body.sender === 'customer') {
+      const table = db.rest_tables.find((t) => t.id === body.tableId);
+      if (!table) return err('Invalid table');
+      if (body.restaurantId && table.restaurant_id !== body.restaurantId) return err('Invalid table');
+      scopedId = table.restaurant_id;
+    } else {
+      const guard = requireSession(request, { roles: ['central', 'manager'] });
+      if (!guard.ok) return guard.response;
+      scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+    }
     if (!scopedId) return err('restaurantId is required');
     const msg = {
       id: makeId('msg'),
       restaurant_id: scopedId,
+      table_id: body.tableId || null,
+      order_id: body.orderId || null,
       sender: clampStr(body.sender || 'restaurant', 40),
       message: clampStr(body.message, 2000),
+      priority: clampStr(body.priority || 'normal', 20),
+      source: clampStr(body.source || 'dashboard', 30),
       read: false,
       created_at: nowIso(),
     };
@@ -1264,6 +1282,7 @@ async function handler(request, { params }) {
         tableId: f.table_id,
         orderId: f.order_id,
         rating: f.rating,
+        nps: f.nps,
         comment: f.comment || '',
         createdAt: f.created_at,
       }));
@@ -1472,6 +1491,10 @@ async function handler(request, { params }) {
         table_number: tbl.number,
         items,
         total,
+        tip_amount: 0,
+        tip_percent: null,
+        split_count: 1,
+        total_with_tip: total,
         status: 'pending',
         allergy: clampStr(body.allergy, 240),
         spicy_level: clampStr(body.spicyLevel, 40),
@@ -1575,13 +1598,15 @@ async function handler(request, { params }) {
       if (ge) return safeErr('upi/init get', ge);
       if (!o) return err('Order not found', 404);
 
+      const payableTotal = o.total_with_tip ?? o.total;
+
       const paymentReference = o.payment_reference || makeUpiReference();
       const vpa = o.payment_vpa || DEMO_UPI_VPA;
       const paymentCreatedAt = o.payment_created_at || new Date().toISOString();
       const paymentQr = o.payment_qr || buildUpiUri({
         vpa,
         name: DEMO_UPI_PAYEE,
-        amount: toAmount(o.total),
+        amount: toAmount(payableTotal),
         reference: paymentReference,
       });
       const { data, error } = await sb.from('orders').update({
@@ -1614,7 +1639,7 @@ async function handler(request, { params }) {
         row.payment_qr = buildUpiUri({
           vpa: row.payment_vpa,
           name: DEMO_UPI_PAYEE,
-          amount: toAmount(row.total),
+          amount: toAmount(row.total_with_tip ?? row.total),
           reference: row.payment_reference,
         });
       }
@@ -1642,20 +1667,37 @@ async function handler(request, { params }) {
 
     // ============ PAYMENT (STRIPE) ============
     if (path === 'payment/stripe/init' && method === 'POST') {
-      const { orderId } = await request.json();
+      const { orderId, tipAmount, tipPercent, splitCount } = await request.json();
       const { data: o, error: ge } = await sb.from('orders').select('*').eq('id', orderId).maybeSingle();
       if (ge) return safeErr('stripe/init get', ge);
       if (!o) return err('Order not found', 404);
 
       const { data: restaurant } = await sb.from('restaurants').select('*').eq('id', o.restaurant_id).maybeSingle();
+
+      const baseTotal = parseFloat(o.total) || 0;
+      const rawTip = tipAmount ?? o.tip_amount ?? 0;
+      const rawSplit = splitCount ?? o.split_count ?? 1;
+      const rawTipPercent = tipPercent ?? o.tip_percent;
+      const safeTip = Math.max(0, parseFloat(rawTip) || 0);
+      const safeSplit = Math.max(1, Math.min(12, parseInt(rawSplit, 10) || 1));
+      const parsedTipPercent = parseFloat(rawTipPercent);
+      const safeTipPercent = Number.isFinite(parsedTipPercent)
+        ? Math.max(0, Math.min(100, parsedTipPercent))
+        : null;
+      const finalAmount = Math.round((baseTotal + safeTip) * 100) / 100;
       
       const result = await createCheckoutSession({
         orderId: o.id,
-        amount: o.total,
+        amount: finalAmount,
         restaurantName: restaurant?.name || 'Restaurant',
         tableId: o.table_id,
         customerEmail: o.customer_email || undefined,
         baseUrl: resolvePublicAppUrl(request),
+        metadata: {
+          tipAmount: String(safeTip),
+          tipPercent: safeTipPercent != null ? String(safeTipPercent) : '',
+          splitCount: String(safeSplit),
+        },
       });
 
       if (!result.success) {
@@ -1664,6 +1706,10 @@ async function handler(request, { params }) {
 
       const paymentCreatedAt = new Date().toISOString();
       const { data, error } = await sb.from('orders').update({
+        tip_amount: safeTip,
+        tip_percent: safeTipPercent,
+        split_count: safeSplit,
+        total_with_tip: finalAmount,
         payment_status: 'pending',
         payment_reference: result.sessionId,
         payment_provider: 'stripe',
@@ -1778,11 +1824,13 @@ async function handler(request, { params }) {
     if (path === 'feedback' && method === 'POST') {
       const body = await request.json();
       const rating = parseInt(body.rating, 10);
+      const nps = parseInt(body.nps, 10);
       const row = {
         restaurant_id: body.restaurantId,
         table_id: body.tableId,
         order_id: body.orderId,
         rating: Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null,
+        nps: Number.isFinite(nps) && nps >= 0 && nps <= 10 ? nps : null,
         comment: clampStr(body.comment, 1000),
       };
       const { error } = await sb.from('feedback').insert(row);
@@ -1804,17 +1852,40 @@ async function handler(request, { params }) {
       return json({ messages: data || [] });
     }
     if (path === 'support' && method === 'POST') {
-      const guard = requireSession(request, { roles: ['central', 'manager'] });
-      if (!guard.ok) return guard.response;
       const body = await request.json();
-      const scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+      let scopedId = null;
+      if (body.sender === 'customer') {
+        const { data: tbl, error: tErr } = await sb.from('rest_tables').select('restaurant_id').eq('id', body.tableId).maybeSingle();
+        if (tErr || !tbl) return err('Invalid table');
+        if (body.restaurantId && tbl.restaurant_id !== body.restaurantId) return err('Invalid table');
+        scopedId = tbl.restaurant_id;
+      } else {
+        const guard = requireSession(request, { roles: ['central', 'manager'] });
+        if (!guard.ok) return guard.response;
+        scopedId = guard.session.type === 'central' ? body.restaurantId : guard.session.restaurantId;
+      }
       if (!scopedId) return err('restaurantId is required');
       const row = {
         restaurant_id: scopedId,
+        table_id: body.tableId || null,
+        order_id: body.orderId || null,
         sender: clampStr(body.sender || 'restaurant', 40),
         message: clampStr(body.message, 2000),
+        priority: clampStr(body.priority || 'normal', 20),
+        source: clampStr(body.source || 'dashboard', 30),
       };
-      const { data, error } = await sb.from('support_messages').insert(row).select('*').single();
+      let data = null;
+      let error = null;
+      ({ data, error } = await sb.from('support_messages').insert(row).select('*').single());
+      if (error && /column .* does not exist|schema cache/i.test(String(error.message || ''))) {
+        const fallback = await sb.from('support_messages').insert({
+          restaurant_id: scopedId,
+          sender: row.sender,
+          message: row.message,
+        }).select('*').single();
+        if (fallback.error) return safeErr('support insert', fallback.error);
+        return json({ message: fallback.data, warning: 'support metadata not stored' });
+      }
       if (error) return safeErr('support insert', error);
       return json({ message: data });
     }

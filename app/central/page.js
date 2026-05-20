@@ -313,6 +313,12 @@ export default function CentralAdmin() {
     blue: 'bg-blue-50 text-blue-700',
     violet: 'bg-violet-50 text-violet-700',
   };
+  const supportTone = {
+    urgent: 'bg-rose-50 text-rose-700 border-rose-200',
+    high: 'bg-amber-50 text-amber-700 border-amber-200',
+    normal: 'bg-neutral-100 text-neutral-700 border-neutral-200',
+  };
+  const shortId = (value) => (value ? String(value).slice(0, 6).toUpperCase() : '');
 
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
@@ -346,11 +352,18 @@ export default function CentralAdmin() {
                   )}
                   {supportMessages.map((m) => {
                     const r = list.find((x) => x.id === m.restaurant_id);
+                    const priority = (m.priority || 'normal').toLowerCase();
+                    const meta = [
+                      m.priority && priority !== 'normal' ? { label: m.priority, cls: supportTone[priority] || supportTone.normal } : null,
+                      m.source && m.source !== 'dashboard' ? { label: m.source, cls: 'bg-neutral-100 text-neutral-700 border-neutral-200' } : null,
+                      m.table_id ? { label: `Table ${shortId(m.table_id)}`, cls: 'bg-blue-50 text-blue-700 border-blue-200' } : null,
+                      m.order_id ? { label: `Order ${shortId(m.order_id)}`, cls: 'bg-violet-50 text-violet-700 border-violet-200' } : null,
+                    ].filter(Boolean);
                     return (
                       <div key={m.id} className={`flex flex-col ${m.sender === 'central' ? 'items-end' : 'items-start'}`}>
-                        {m.sender === 'restaurant' && (
+                        {m.sender !== 'central' && (
                           <div className="text-xs text-neutral-500 mb-1 ml-1 font-medium">
-                            {r?.name || 'Unknown Restaurant'}
+                            {r?.name || 'Unknown Restaurant'}{m.sender === 'customer' ? ' · Guest' : ''}
                           </div>
                         )}
                         <div
@@ -363,6 +376,15 @@ export default function CentralAdmin() {
                           {m.message}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
+                        {meta.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {meta.map((tag) => (
+                              <Badge key={tag.label} className={`rounded-full border text-[9px] uppercase tracking-widest ${tag.cls}`}>
+                                {tag.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                           <span className="text-[10px] text-neutral-400">{new Date(m.created_at).toLocaleString()}</span>
                           {m.sender === 'restaurant' && (
                             <button

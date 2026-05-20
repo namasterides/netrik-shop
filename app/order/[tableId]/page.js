@@ -23,6 +23,9 @@ import {
   AlertTriangle,
   Pencil,
   Smile,
+  Bell,
+  Languages,
+  Crown,
 } from 'lucide-react';
 
 const FALLBACK_MENU_IMAGE = 'https://images.pexels.com/photos/35420084/pexels-photo-35420084.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
@@ -82,6 +85,15 @@ const ORDER_STEPS = [
   { id: 'preparing', label: 'Cooking' },
   { id: 'ready', label: 'Ready' },
   { id: 'served', label: 'Served' },
+];
+
+const TIP_PRESETS = [0, 5, 10, 15, 20];
+const LOYALTY_KEY_PREFIX = 'netrik_loyalty';
+const LOYALTY_TIERS = [
+  { id: 'Bronze', min: 0, color: 'bg-amber-50 text-amber-800 border-amber-200' },
+  { id: 'Silver', min: 150, color: 'bg-slate-100 text-slate-700 border-slate-200' },
+  { id: 'Gold', min: 350, color: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
+  { id: 'Platinum', min: 650, color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
 ];
 
 const renderTextWithAnimatedEmojis = (text) => {
@@ -149,6 +161,25 @@ const pickSuggestedItems = ({ menu = [], cart = [], moodPick, tastePick, dietPic
   return scored.slice(0, limit).map((row) => row.item);
 };
 
+const detectLanguage = (text = '') => {
+  const lower = String(text || '').toLowerCase();
+  if (/\b(hola|gracias|por\s+favor|menu|cuenta|pedido|quiero|recomienda|recomendacion)\b/i.test(lower)) return 'es';
+  return 'en';
+};
+
+const getLoyaltyTier = (points = 0) => {
+  let current = LOYALTY_TIERS[0];
+  for (const tier of LOYALTY_TIERS) {
+    if (points >= tier.min) current = tier;
+  }
+  return current;
+};
+
+const getItemName = (item, lang = 'en') => {
+  if (lang === 'es' && item?.nameEs) return item.nameEs;
+  return item?.name || '';
+};
+
 export default function CustomerOrder() {
   const { tableId } = useParams();
   const storageKey = buildStorageKey(tableId);
@@ -164,6 +195,16 @@ export default function CustomerOrder() {
   const [input, setInput] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState([]);
+  const [language, setLanguage] = useState('auto');
+  const [tipMode, setTipMode] = useState('percent');
+  const [tipPercent, setTipPercent] = useState(15);
+  const [tipCustom, setTipCustom] = useState('');
+  const [splitCount, setSplitCount] = useState(1);
+  const [npsScore, setNpsScore] = useState(null);
+  const [feedbackFollowup, setFeedbackFollowup] = useState('');
+  const [loyalty, setLoyalty] = useState({ points: 0, tier: 'Bronze' });
+  const [loyaltyBurst, setLoyaltyBurst] = useState(null);
+  const [callStaffLoading, setCallStaffLoading] = useState(false);
   const [chefQuizOpen, setChefQuizOpen] = useState(false);
   const [chefQuizStep, setChefQuizStep] = useState(0);
   const [chefQuizAnswers, setChefQuizAnswers] = useState({ mood: '', taste: '', diet: 'none' });
@@ -295,6 +336,31 @@ export default function CustomerOrder() {
   }, []);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem('netrik_language');
+      if (stored) setLanguage(stored);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('netrik_language', language); } catch {}
+  }, [language]);
+
+  useEffect(() => {
+    if (!restaurant?.id) return;
+    try {
+      const key = `${LOYALTY_KEY_PREFIX}:${restaurant.id}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.points === 'number') {
+        const tier = getLoyaltyTier(parsed.points).id;
+        setLoyalty({ points: parsed.points, tier });
+      }
+    } catch {}
+  }, [restaurant?.id]);
+
+  useEffect(() => {
     if (!tableId) return;
     (async () => {
       try {
@@ -411,6 +477,18 @@ export default function CustomerOrder() {
   }, [order?.status]);
 
   useEffect(() => {
+    if (!order?.id) return;
+    if (Number(order.tipAmount || 0) > 0) {
+      setTipMode('custom');
+      setTipCustom(Number(order.tipAmount).toFixed(2));
+    } else if (Number(order.tipPercent || 0) > 0) {
+      setTipMode('percent');
+      setTipPercent(Number(order.tipPercent));
+    }
+    if (Number(order.splitCount || 0) > 0) setSplitCount(Number(order.splitCount));
+  }, [order?.id]);
+
+  useEffect(() => {
     if (!menu.length) return;
     if (!cart.length) {
       suggestRef.current = 0;
@@ -424,6 +502,13 @@ export default function CustomerOrder() {
     if (picks.length === 0) return;
     setMessages((m) => [...m, { role: 'assistant', text: 'You might like these as well:', items: picks }]);
   }, [cart, menu, stage]);
+
+  useEffect(() => {
+    if (!order?.id) return;
+    if (order.paymentStatus === 'paid' || order.status === 'paid') {
+      awardLoyalty(order.id, payTotal || order.total || 0);
+    }
+  }, [order?.id, order?.paymentStatus, order?.status, payTotal, order?.total]);
 
   // Poll order status
   useEffect(() => {
@@ -500,6 +585,28 @@ export default function CustomerOrder() {
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
   const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart]);
+  const uiLang = language === 'es' ? 'es' : 'en';
+  const baseTotal = Number(order?.total || 0);
+  const tipAmount = useMemo(() => {
+    const existing = Number(order?.tipAmount || 0);
+    if (existing > 0) return existing;
+    if (tipMode === 'custom') {
+      const raw = Number.parseFloat(tipCustom || '');
+      return Number.isFinite(raw) && raw >= 0 ? Math.round(raw * 100) / 100 : 0;
+    }
+    if (!tipPercent) return 0;
+    return Math.round(baseTotal * (tipPercent / 100) * 100) / 100;
+  }, [order?.tipAmount, tipMode, tipCustom, tipPercent, baseTotal]);
+  const payTotal = useMemo(() => {
+    const withTip = Number(order?.totalWithTip || 0);
+    if (withTip > 0) return withTip;
+    return Math.round((baseTotal + tipAmount) * 100) / 100;
+  }, [order?.totalWithTip, baseTotal, tipAmount]);
+  const perPersonTotal = useMemo(() => {
+    const split = Math.max(1, splitCount || 1);
+    return Math.round((payTotal / split) * 100) / 100;
+  }, [payTotal, splitCount]);
+  const needsFollowup = (rating && rating <= 2) || (npsScore !== null && npsScore <= 6);
   const burstTitle = burst === 'ready' ? 'Food is ready' : 'Order placed';
   const burstSubtitle = burst === 'ready' ? 'Your order is ready.' : 'The chef has your ticket.';
   const canReorder = useMemo(() => {
@@ -535,12 +642,15 @@ export default function CustomerOrder() {
       else next.push({ id: item.id, name: item.name, nameEs: item.nameEs || '', price: item.price, qty: 1, notes: '' });
       return next;
     });
-    toast.success(`${item.name} added`);
+      toast.success(`${getItemName(item, uiLang)} added`);
   };
 
   const downloadReceipt = (currentOrder, currentPayment) => {
     if (!currentOrder) return;
     const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
+    const baseTotal = Number(currentOrder.total || 0);
+    const tip = Number(currentOrder.tipAmount || 0);
+    const totalWithTip = Number(currentOrder.totalWithTip || (baseTotal + tip));
     const details = [
       currentOrder.paymentReference || currentPayment?.reference ? `Reference: ${currentOrder.paymentReference || currentPayment?.reference}` : '',
       currentOrder.paymentProvider ? `Provider: ${currentOrder.paymentProvider}` : '',
@@ -581,7 +691,8 @@ export default function CustomerOrder() {
         <thead><tr><th>Qty</th><th>Item</th><th style="text-align:right;">Total</th></tr></thead>
         <tbody>${itemsHtml || '<tr><td colspan="3">No items</td></tr>'}</tbody>
       </table>
-      <div class="total">Total: $${currentOrder.total.toFixed(2)}</div>
+      ${tip > 0 ? `<div class="meta">Tip: $${tip.toFixed(2)}</div>` : ''}
+      <div class="total">Total: $${totalWithTip.toFixed(2)}</div>
       <div style="margin-top:36px;padding-top:20px;border-top:1px dashed #e5e7eb;text-align:center;font-size:10px;color:#9ca3af;letter-spacing:0.02em;">
         POWERED BY
         <div style="margin-top:8px;">
@@ -687,11 +798,16 @@ export default function CustomerOrder() {
     if (!order) return;
     const previousStage = stage;
     setStage('paying');
-    setMessages((m) => [...m, { role: 'assistant', text: `Opening secure card payment for $${order.total.toFixed(2)}.` }]);
+    setMessages((m) => [...m, { role: 'assistant', text: `Opening secure card payment for $${payTotal.toFixed(2)}.` }]);
     try {
       const res = await fetch('/api/payment/stripe/init', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.id }),
+        body: JSON.stringify({
+          orderId: order.id,
+          tipAmount,
+          tipPercent: tipMode === 'percent' ? tipPercent : null,
+          splitCount,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -722,9 +838,10 @@ export default function CustomerOrder() {
   };
 
   const submitFeedback = async () => {
+    const combinedComment = [feedback?.trim(), feedbackFollowup?.trim()].filter(Boolean).join(' | ');
     await fetch('/api/feedback', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId: restaurant.id, tableId: table.id, orderId: order.id, rating, comment: feedback }),
+      body: JSON.stringify({ restaurantId: restaurant.id, tableId: table.id, orderId: order.id, rating, nps: npsScore, comment: combinedComment }),
     });
     setStage('done');
     setMessages((m) => [...m, { role: 'assistant', text: 'Thank you for your feedback 🙏 Have a wonderful day.' }]);
@@ -747,22 +864,13 @@ export default function CustomerOrder() {
     ));
   };
 
-  const closeMenu = () => {
-    setShowMenu(false);
-    setActiveVideoId(null);
-  };
-
-  const startVideoPreview = (id) => {
-    if (videoTimerRef.current) clearTimeout(videoTimerRef.current);
-    setActiveVideoId(id);
-    videoTimerRef.current = setTimeout(() => setActiveVideoId(null), 8000);
-  };
-
-  const reorderLast = () => {
-    if (!lastOrder || !restaurant) return;
-    if (lastOrder.restaurantId !== restaurant.id) return;
-    const additions = (lastOrder.items || []).map((i) => ({ id: i.id, quantity: i.qty }));
-    const next = mergeItemsIntoCart(cart, additions);
+      setTipMode('percent');
+      setTipPercent(15);
+      setTipCustom('');
+      setSplitCount(1);
+      setNpsScore(null);
+      setFeedbackFollowup('');
+      setCallStaffLoading(false);
     if (next.length === cart.length) return toast.error('No items available from the last order');
     setCart(next);
     toast.success('Last order added to cart');
@@ -802,10 +910,60 @@ export default function CustomerOrder() {
     else finishChefSurprise(next);
   };
 
+  const awardLoyalty = (orderId, amount) => {
+    if (!restaurant?.id || !orderId) return;
+    const pointsToAdd = Math.max(1, Math.round(Number(amount || 0)));
+    const key = `${LOYALTY_KEY_PREFIX}:${restaurant.id}`;
+    try {
+      const raw = localStorage.getItem(key);
+      const prev = raw ? JSON.parse(raw) : { points: 0, tier: 'Bronze', lastOrderId: null };
+      if (prev.lastOrderId === orderId) return;
+      const nextPoints = (prev.points || 0) + pointsToAdd;
+      const nextTier = getLoyaltyTier(nextPoints).id;
+      const next = { points: nextPoints, tier: nextTier, lastOrderId: orderId };
+      localStorage.setItem(key, JSON.stringify(next));
+      setLoyalty({ points: nextPoints, tier: nextTier });
+      if (nextTier !== prev.tier) {
+        setLoyaltyBurst(nextTier);
+        setTimeout(() => setLoyaltyBurst(null), 2200);
+        setMessages((m) => [...m, { role: 'assistant', text: `Loyalty unlocked: ${nextTier} tier.` }]);
+      }
+    } catch {}
+  };
+
+  const callStaff = async () => {
+    if (!restaurant || !table) return;
+    if (callStaffLoading) return;
+    setCallStaffLoading(true);
+    try {
+      const res = await fetch('/api/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: restaurant.id,
+          tableId: table.id,
+          orderId: order?.id || null,
+          sender: 'customer',
+          priority: 'urgent',
+          source: 'table',
+          message: `Table ${table.number} needs assistance.`,
+        }),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      setMessages((m) => [...m, { role: 'assistant', text: 'Staff has been notified. Someone will be right over.' }]);
+    } catch {
+      toast.error('Unable to alert staff');
+    } finally {
+      setCallStaffLoading(false);
+    }
+  };
+
   const sendMessage = async (textOverride = null) => {
     const text = textOverride || input.trim();
     if (!text || sending) return;
     if (emojiOpen) setEmojiOpen(false);
+    const resolvedLanguage = language === 'auto' ? detectLanguage(text) : language;
+    if (language === 'auto' && resolvedLanguage !== 'auto') setLanguage(resolvedLanguage);
     const lower = text.toLowerCase();
     if (stage === 'served' && /^(no|nope|nothing|that's all|thats all|bill|check)/i.test(lower)) {
       setMessages((m) => [...m, { role: 'user', text }]);
@@ -830,7 +988,7 @@ export default function CustomerOrder() {
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId, restaurantId: restaurant.id, tableId: table.id, language: 'en',
+          sessionId, restaurantId: restaurant.id, tableId: table.id, language: resolvedLanguage,
           message: text,
           menu: menu.map((m) => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [] })),
           cart, allergy, preference, avoid, chefNotes, stage,
@@ -920,12 +1078,31 @@ export default function CustomerOrder() {
                 <p className="text-[10px] text-emerald-700/80 font-semibold uppercase tracking-[0.18em]">
                   Table {table.number}
                 </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-full border border-neutral-200 bg-white p-0.5">
+                    {['auto', 'en', 'es'].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setLanguage(value)}
+                        className={`px-2.5 py-1 text-[10px] uppercase tracking-wider font-semibold rounded-full transition ${
+                          language === value ? 'bg-emerald-700 text-white' : 'text-neutral-500 hover:bg-neutral-100'
+                        }`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${getLoyaltyTier(loyalty.points).color}`}>
+                    <Crown className="h-3 w-3" /> {loyalty.tier} · {loyalty.points} pts
+                  </div>
+                </div>
               </div>
             </div>
             {order && (
               <div className="text-right flex flex-col items-end gap-1 shrink-0">
                 <div className="text-lg font-extrabold text-emerald-800 tabular-nums leading-none">
-                  ${order.total.toFixed(2)}
+                    ${(Number(order.totalWithTip ?? order.total) || 0).toFixed(2)}
                 </div>
                 <div className="text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-medium">
                   {order.status} · pay {order.paymentStatus || payment?.status || 'pending'}
@@ -1051,7 +1228,7 @@ export default function CustomerOrder() {
                           ) : null}
                         </div>
                         <div className="p-2.5 flex-1 flex flex-col">
-                          <div className="text-[13px] font-semibold leading-tight line-clamp-2">{item.name}</div>
+                          <div className="text-[13px] font-semibold leading-tight line-clamp-2">{getItemName(item, uiLang)}</div>
                           {item.description && <div className="text-[10px] text-neutral-500 mt-0.5 line-clamp-2">{item.description}</div>}
                           <div className="mt-auto pt-1.5 flex items-center justify-between">
                             <div className="text-sm font-bold text-emerald-800 tabular-nums">${Number(item.price).toFixed(2)}</div>
@@ -1136,6 +1313,13 @@ export default function CustomerOrder() {
               className="px-4 py-2 rounded-full bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 hover:border-emerald-200 hover:text-emerald-800 transition flex items-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5" />Add Dessert
+            </button>
+            <button
+              onClick={callStaff}
+              disabled={callStaffLoading}
+              className="px-4 py-2 rounded-full bg-neutral-900 text-white text-sm font-semibold hover:bg-neutral-800 transition flex items-center gap-1.5 disabled:opacity-70"
+            >
+              <Bell className="w-3.5 h-3.5" />{callStaffLoading ? 'Calling…' : 'Call Staff'}
             </button>
           </div>
         )}
@@ -1434,7 +1618,7 @@ export default function CustomerOrder() {
                         )}
                       </div>
                       <div className="p-3 flex-1 flex flex-col">
-                        <div className="text-sm font-semibold leading-tight line-clamp-2">{item.name}</div>
+                        <div className="text-sm font-semibold leading-tight line-clamp-2">{getItemName(item, uiLang)}</div>
                         {item.description && <div className="text-[11px] text-neutral-500 mt-1 line-clamp-2">{item.description}</div>}
                         <div className="flex items-center justify-between mt-auto pt-2">
                           <div className="text-base font-bold text-emerald-800 tabular-nums">${item.price.toFixed(2)}</div>
@@ -1490,7 +1674,7 @@ export default function CustomerOrder() {
                   {(pendingItems || cart).map((item, idx) => (
                     <div key={idx} className="flex items-center justify-between p-2 border-b border-neutral-100 last:border-0 bg-white m-1 rounded-lg">
                       <div className="flex-1 min-w-0 pr-2">
-                        <div className="text-xs font-semibold truncate text-neutral-800">{item.name}</div>
+                        <div className="text-xs font-semibold truncate text-neutral-800">{getItemName(item, uiLang)}</div>
                         <div className="text-[10px] text-emerald-700 font-bold">${item.price.toFixed(2)}</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1613,7 +1797,68 @@ export default function CustomerOrder() {
                     {chefNotes && <div>✍ <span className="font-semibold">Chef notes:</span> {chefNotes}</div>}
                   </div>
                 )}
-                <div className="px-6 pb-4 space-y-1 text-sm">
+                <div className="px-6 pb-4 space-y-4 text-sm">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-2">Add tip</div>
+                    <div className="flex flex-wrap gap-2">
+                      {TIP_PRESETS.map((preset) => (
+                        <button
+                          key={preset}
+                          onClick={() => { setTipMode('percent'); setTipPercent(preset); setTipCustom(''); }}
+                          className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
+                            tipMode === 'percent' && tipPercent === preset
+                              ? 'bg-emerald-700 text-white border-emerald-700'
+                              : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                          }`}
+                        >
+                          {preset}%
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setTipMode('custom')}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
+                          tipMode === 'custom'
+                            ? 'bg-neutral-900 text-white border-neutral-900'
+                            : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        }`}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                    {tipMode === 'custom' && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={tipCustom}
+                          onChange={(e) => setTipCustom(e.target.value)}
+                          placeholder="Tip amount"
+                          className="h-9 bg-white border-neutral-200 rounded-full text-xs"
+                        />
+                        <span className="text-xs text-neutral-500">USD</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-2">Split bill</div>
+                    <div className="flex flex-wrap gap-2">
+                      {[1, 2, 3, 4, 5, 6].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setSplitCount(n)}
+                          className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
+                            splitCount === n
+                              ? 'bg-emerald-700 text-white border-emerald-700'
+                              : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                          }`}
+                        >
+                          {n}x
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-2">Per person: ${perPersonTotal.toFixed(2)}</div>
+                  </div>
                   {(() => {
                     const subtotal = (order.items || []).reduce((s, i) => s + Number(i.price || 0) * (i.qty || 1), 0);
                     const total = Number(order.total || subtotal);
@@ -1628,8 +1873,13 @@ export default function CustomerOrder() {
                             <span>Taxes & service</span><span className="tabular-nums">${tax.toFixed(2)}</span>
                           </div>
                         )}
+                        {tipAmount > 0 && (
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Tip</span><span className="tabular-nums">${tipAmount.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-lg font-extrabold pt-2 border-t border-neutral-100 mt-2">
-                          <span>Total</span><span className="tabular-nums">${total.toFixed(2)}</span>
+                          <span>Total</span><span className="tabular-nums">${payTotal.toFixed(2)}</span>
                         </div>
                       </>
                     );
@@ -1646,7 +1896,7 @@ export default function CustomerOrder() {
                   onClick={async () => { setShowBill(false); await startStripePayment(); }}
                 >
                   <FileText className="h-4 w-4 mr-2" />
-                  {order.status === 'paid' ? 'Already paid' : `Pay $${order.total.toFixed(2)}`}
+                  {order.status === 'paid' ? 'Already paid' : `Pay $${payTotal.toFixed(2)}`}
                 </Button>
               </div>
             </div>
@@ -1705,7 +1955,7 @@ export default function CustomerOrder() {
                 <div className="flex items-end justify-between border-b border-neutral-100 pb-3">
                   <div>
                     <div className="text-neutral-500 text-[10px] uppercase tracking-widest font-semibold">Total</div>
-                    <div className="text-3xl font-extrabold tabular-nums">${order?.total.toFixed(2)}</div>
+                    <div className="text-3xl font-extrabold tabular-nums">${payTotal.toFixed(2)}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-[10px] text-neutral-500 uppercase font-semibold">Status</div>
@@ -1756,12 +2006,45 @@ export default function CustomerOrder() {
                   </button>
                 ))}
               </div>
+              <div className="text-xs text-neutral-500 font-semibold uppercase tracking-widest mb-2">Likelihood to recommend</div>
+              <div className="flex flex-wrap justify-center gap-1.5 mb-2">
+                {Array.from({ length: 11 }).map((_, n) => (
+                  <button
+                    key={n}
+                    onClick={() => setNpsScore(n)}
+                    className={`h-8 w-8 rounded-full text-xs font-semibold border transition ${
+                      npsScore === n
+                        ? 'bg-emerald-700 text-white border-emerald-700'
+                        : 'border-neutral-200 text-neutral-500 hover:bg-neutral-100'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] text-neutral-400 mb-4">
+                <span>Not likely</span>
+                <span>Very likely</span>
+              </div>
+              {needsFollowup && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 mb-4">
+                  We are sorry about that. Please tell us what went wrong so we can improve.
+                </div>
+              )}
               <Input
-                placeholder="Leave a comment (optional)…"
+                placeholder={needsFollowup ? 'Quick summary (optional)…' : 'Leave a comment (optional)…'}
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 className="bg-neutral-50 border-neutral-200 rounded-full h-12 mb-4 placeholder:text-neutral-400 text-[15px] focus-visible:ring-emerald-700 focus-visible:border-emerald-700"
               />
+              {needsFollowup && (
+                <textarea
+                  value={feedbackFollowup}
+                  onChange={(e) => setFeedbackFollowup(e.target.value)}
+                  placeholder="Tell us what went wrong…"
+                  className="w-full min-h-[96px] bg-white border border-neutral-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:border-emerald-700 mb-4"
+                />
+              )}
               <Button
                 onClick={submitFeedback}
                 className="w-full rounded-full bg-emerald-700 hover:bg-emerald-800 text-white h-12 text-base font-bold shadow-md shadow-emerald-700/20"

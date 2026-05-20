@@ -309,6 +309,17 @@ export default function ManagerDashboard() {
   };
 
   const filteredOrders = useMemo(() => orders.filter((o) => orderInRange(o, startDate, endDate)), [orders, startDate, endDate]);
+  const tableLookup = useMemo(() => {
+    const map = {};
+    tables.forEach((t) => { map[t.id] = t.number; });
+    return map;
+  }, [tables]);
+  const supportTone = {
+    urgent: 'bg-rose-50 text-rose-700 border-rose-200',
+    high: 'bg-amber-50 text-amber-700 border-amber-200',
+    normal: 'bg-neutral-100 text-neutral-700 border-neutral-200',
+  };
+  const shortId = (value) => (value ? String(value).slice(0, 6).toUpperCase() : '');
 
   const downloadCSV = (dataRows = orders, filenamePrefix = 'orders') => {
     const brandLogoUrl = new URL(BRAND_LOGO_PATH, window.location.origin).toString();
@@ -1202,23 +1213,48 @@ export default function ManagerDashboard() {
             <div className="text-center text-xs text-neutral-500">
               This chat connects you directly with Central Admin.
             </div>
-            {supportMessages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.sender === 'central' ? 'items-start' : 'items-end'}`}>
-                {m.sender === 'central' && (
-                  <div className="text-xs text-emerald-700 mb-1 ml-1 font-semibold">Netrik Shop HQ</div>
-                )}
-                <div
-                  className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${
-                    m.sender === 'restaurant'
-                      ? 'bg-emerald-700 text-white rounded-br-sm'
-                      : 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-sm'
-                  }`}
-                >
-                  {m.message}
+            {supportMessages.map((m) => {
+              const isCentral = m.sender === 'central';
+              const isCustomer = m.sender === 'customer';
+              const isIncoming = isCentral || isCustomer;
+              const priority = (m.priority || 'normal').toLowerCase();
+              const tableLabel = m.table_id ? `Table ${tableLookup[m.table_id] || shortId(m.table_id)}` : null;
+              const meta = [
+                m.priority && priority !== 'normal' ? { label: m.priority, cls: supportTone[priority] || supportTone.normal } : null,
+                m.source && m.source !== 'dashboard' ? { label: m.source, cls: 'bg-neutral-100 text-neutral-700 border-neutral-200' } : null,
+                tableLabel ? { label: tableLabel, cls: 'bg-blue-50 text-blue-700 border-blue-200' } : null,
+                m.order_id ? { label: `Order ${shortId(m.order_id)}`, cls: 'bg-violet-50 text-violet-700 border-violet-200' } : null,
+              ].filter(Boolean);
+              return (
+                <div key={m.id} className={`flex flex-col ${isIncoming ? 'items-start' : 'items-end'}`}>
+                  {isCentral && (
+                    <div className="text-xs text-emerald-700 mb-1 ml-1 font-semibold">Netrik Shop HQ</div>
+                  )}
+                  {isCustomer && (
+                    <div className="text-xs text-amber-700 mb-1 ml-1 font-semibold">Guest</div>
+                  )}
+                  <div
+                    className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${
+                      isIncoming
+                        ? 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-sm'
+                        : 'bg-emerald-700 text-white rounded-br-sm'
+                    }`}
+                  >
+                    {m.message}
+                  </div>
+                  {meta.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {meta.map((tag) => (
+                        <Badge key={tag.label} className={`rounded-full border text-[9px] uppercase tracking-widest ${tag.cls}`}>
+                          {tag.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="text-[10px] text-neutral-400 mt-1">{new Date(m.created_at).toLocaleString()}</div>
                 </div>
-                <div className="text-[10px] text-neutral-400 mt-1">{new Date(m.created_at).toLocaleString()}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="p-4 border-t border-neutral-200 shrink-0 bg-white">
             <div className="flex gap-2">
