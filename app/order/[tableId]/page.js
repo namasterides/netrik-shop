@@ -864,14 +864,32 @@ export default function CustomerOrder() {
     ));
   };
 
-      setTipMode('percent');
-      setTipPercent(15);
-      setTipCustom('');
-      setSplitCount(1);
-      setNpsScore(null);
-      setFeedbackFollowup('');
-      setCallStaffLoading(false);
-    if (next.length === cart.length) return toast.error('No items available from the last order');
+  const reorderLast = () => {
+    if (!lastOrder || !Array.isArray(lastOrder.items) || !menu.length) {
+      return toast.error('No previous order available');
+    }
+    const next = lastOrder.items
+      .map((it) => {
+        const match = menu.find((m) => m.id === it.id);
+        if (!match) return null;
+        return {
+          id: match.id,
+          name: match.name,
+          nameEs: match.nameEs || '',
+          price: match.price,
+          qty: Math.max(1, parseInt(it.qty, 10) || 1),
+          notes: '',
+        };
+      })
+      .filter(Boolean);
+    setTipMode('percent');
+    setTipPercent(15);
+    setTipCustom('');
+    setSplitCount(1);
+    setNpsScore(null);
+    setFeedbackFollowup('');
+    setCallStaffLoading(false);
+    if (next.length === 0) return toast.error('No items available from the last order');
     setCart(next);
     toast.success('Last order added to cart');
   };
