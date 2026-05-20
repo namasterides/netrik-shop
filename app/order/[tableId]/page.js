@@ -22,6 +22,7 @@ import {
   FileText,
   AlertTriangle,
   Pencil,
+  RotateCcw,
   Smile,
   Bell,
   Languages,
@@ -862,6 +863,22 @@ export default function CustomerOrder() {
     setDietaryFilter((prev) => (
       prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
     ));
+  };
+
+  const closeMenu = () => {
+    setShowMenu(false);
+    setActiveVideoId(null);
+    if (videoTimerRef.current) {
+      clearTimeout(videoTimerRef.current);
+      videoTimerRef.current = null;
+    }
+  };
+
+  const startVideoPreview = (id) => {
+    if (!id) return;
+    setActiveVideoId(id);
+    if (videoTimerRef.current) clearTimeout(videoTimerRef.current);
+    videoTimerRef.current = setTimeout(() => setActiveVideoId(null), 6000);
   };
 
   const reorderLast = () => {
