@@ -17,7 +17,7 @@ import {
   attachSession,
   clearSession,
 } from '@/lib/auth';
-import { createCheckoutSession, getSessionStatus, handleWebhookEvent, verifyWebhookSignature } from '@/lib/stripe';
+import { createCheckoutSession, createPaymentIntent, getSessionStatus, getPaymentIntentStatus, handleWebhookEvent, verifyWebhookSignature } from '@/lib/stripe';
 
 // Try Gemini first; fall back to local NLU on missing key, error, or empty reply.
 async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language }) {
@@ -1686,13 +1686,12 @@ async function handler(request, { params }) {
         : null;
       const finalAmount = Math.round((baseTotal + safeTip) * 100) / 100;
       
-      const result = await createCheckoutSession({
+      const result = await createPaymentIntent({
         orderId: o.id,
         amount: finalAmount,
         restaurantName: restaurant?.name || 'Restaurant',
         tableId: o.table_id,
         customerEmail: o.customer_email || undefined,
-        baseUrl: resolvePublicAppUrl(request),
         metadata: {
           tipAmount: String(safeTip),
           tipPercent: safeTipPercent != null ? String(safeTipPercent) : '',
@@ -1701,7 +1700,7 @@ async function handler(request, { params }) {
       });
 
       if (!result.success) {
-        return safeErr('stripe checkout creation', result.error);
+        return safeErr('stripe payment intent creation', result.error);
       }
 
       const paymentCreatedAt = new Date().toISOString();
@@ -1711,7 +1710,7 @@ async function handler(request, { params }) {
         split_count: safeSplit,
         total_with_tip: finalAmount,
         payment_status: 'pending',
-        payment_reference: result.sessionId,
+        payment_reference: result.paymentIntentId,
         payment_provider: 'stripe',
         payment_method: 'card',
         payment_created_at: paymentCreatedAt,
@@ -1723,13 +1722,13 @@ async function handler(request, { params }) {
         order: orderToApi(data),
         payment: {
           status: 'pending',
-          reference: result.sessionId,
+          reference: result.paymentIntentId,
           provider: 'stripe',
           method: 'card',
           createdAt: paymentCreatedAt,
-          checkoutUrl: result.checkoutUrl,
+          clientSecret: result.clientSecret,
         },
-        checkoutUrl: result.checkoutUrl,
+        clientSecret: result.clientSecret,
       });
     }
 
@@ -1754,13 +1753,22 @@ async function handler(request, { params }) {
         });
       }
 
-      const session = await getSessionStatus(sessionId || o.payment_reference);
+      const ref = sessionId || o.payment_reference;
+      let isPaid = false;
+      
+      if (ref && ref.startsWith('cs_')) {
+        const session = await getSessionStatus(ref);
+        isPaid = session.success && session.status === 'paid';
+      } else if (ref && ref.startsWith('pi_')) {
+        const pi = await getPaymentIntentStatus(ref);
+        isPaid = pi.success && pi.status === 'succeeded';
+      }
       
       let paymentStatus = o.payment_status || 'unpaid';
       let orderStatus = o.status;
       let paidAt = o.paid_at;
 
-      if (session.success && session.status === 'paid') {
+      if (isPaid) {
         paymentStatus = 'paid';
         orderStatus = 'paid';
         paidAt = new Date().toISOString();

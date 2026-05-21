@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import LoadingLogo from '@/components/loading-logo';
+import InlinePayment from '@/components/inline-payment';
 import {
   Send,
   Star,
@@ -817,12 +818,12 @@ export default function CustomerOrder() {
       }
       if (data.order) setOrder(data.order);
       if (data.payment) setPayment(data.payment || null);
-      if (data.checkoutUrl) setCheckoutUrl(data.checkoutUrl);
+      if (data.clientSecret) setCheckoutUrl(data.clientSecret);
       setPaymentOpen(true);
-      if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank', 'noopener,noreferrer');
-      else {
+      if (!data.clientSecret) {
         setStage(previousStage);
-        toast.error('Checkout URL not returned. Please try again.');
+        toast.error('Client secret not returned. Please try again.');
+        setPaymentOpen(false);
       }
     } catch (e) {
       setStage(previousStage);
@@ -1989,17 +1990,22 @@ export default function CustomerOrder() {
                 <div className="text-xs text-neutral-500">
                   Reference: <span className="font-mono text-neutral-800">{payment?.reference || order?.paymentReference || 'Generating…'}</span>
                 </div>
-                <div className="rounded-2xl bg-neutral-50 border border-neutral-200 p-4 text-center text-sm text-neutral-600">
-                  Secure card checkout powered by Stripe. You will return here after payment.
-                </div>
-                <div className="flex gap-2">
-                  <Button className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white" onClick={openCheckout}>
-                    <ExternalLink className="h-4 w-4 mr-2" />Open secure payment
-                  </Button>
-                  <Button variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadReceipt(order, payment)}>
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
+                {checkoutUrl ? (
+                  <InlinePayment 
+                    clientSecret={checkoutUrl}
+                    amount={payTotal}
+                    onSuccess={(pi) => {
+                      toast.success('Payment successful!');
+                      setPayment({ ...payment, status: 'paid' });
+                      setPaymentOpen(false);
+                      setStage('feedback');
+                      setMessages((m) => [...m, { role: 'assistant', text: 'Payment received! Thank you. How was your experience?' }]);
+                    }}
+                    onCancel={() => setPaymentOpen(false)}
+                  />
+                ) : (
+                  <div className="text-center p-4">Loading secure payment...</div>
+                )}
                 <div className="text-center text-[11px] text-neutral-400">Keep this screen open to see payment confirmation.</div>
               </div>
             </div>
