@@ -1114,20 +1114,7 @@ export default function CustomerOrder() {
                   Table {table.number}
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <div className="inline-flex rounded-full border border-neutral-200 bg-white p-0.5">
-                    {['auto', 'en', 'es'].map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setLanguage(value)}
-                        className={`px-2.5 py-1 text-[10px] uppercase tracking-wider font-semibold rounded-full transition ${
-                          language === value ? 'bg-emerald-700 text-white' : 'text-neutral-500 hover:bg-neutral-100'
-                        }`}
-                      >
-                        {value}
-                      </button>
-                    ))}
-                  </div>
+
                   <div className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${getLoyaltyTier(loyalty.points).color}`}>
                     <Crown className="h-3 w-3" /> {loyalty.tier} · {loyalty.points} pts
                   </div>
