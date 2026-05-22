@@ -1686,7 +1686,7 @@ async function handler(request, { params }) {
         : null;
       const finalAmount = Math.round((baseTotal + safeTip) * 100) / 100;
       
-      const result = await createPaymentIntent({
+      const paymentIntentResult = await createPaymentIntent({
         orderId: o.id,
         amount: finalAmount,
         restaurantName: restaurant?.name || 'Restaurant',
@@ -1699,8 +1699,32 @@ async function handler(request, { params }) {
         },
       });
 
+      let result = paymentIntentResult;
+      let usesHostedCheckout = false;
+
+      // Fallback to hosted Checkout if PaymentIntent creation fails.
       if (!result.success) {
-        return safeErr('stripe payment intent creation', result.error);
+        const checkoutFallback = await createCheckoutSession({
+          orderId: o.id,
+          amount: finalAmount,
+          restaurantName: restaurant?.name || 'Restaurant',
+          tableId: o.table_id,
+          customerEmail: o.customer_email || undefined,
+          baseUrl: process.env.NEXT_PUBLIC_APP_URL,
+          metadata: {
+            tipAmount: String(safeTip),
+            tipPercent: safeTipPercent != null ? String(safeTipPercent) : '',
+            splitCount: String(safeSplit),
+          },
+        });
+
+        if (!checkoutFallback.success) {
+          console.error('[api] stripe payment intent creation failed:', paymentIntentResult.error);
+          return safeErr('stripe payment creation', checkoutFallback.error);
+        }
+
+        result = checkoutFallback;
+        usesHostedCheckout = true;
       }
 
       const paymentCreatedAt = new Date().toISOString();
@@ -1710,7 +1734,7 @@ async function handler(request, { params }) {
         split_count: safeSplit,
         total_with_tip: finalAmount,
         payment_status: 'pending',
-        payment_reference: result.paymentIntentId,
+        payment_reference: usesHostedCheckout ? result.sessionId : result.paymentIntentId,
         payment_provider: 'stripe',
         payment_method: 'card',
         payment_created_at: paymentCreatedAt,
@@ -1722,13 +1746,15 @@ async function handler(request, { params }) {
         order: orderToApi(data),
         payment: {
           status: 'pending',
-          reference: result.paymentIntentId,
+          reference: usesHostedCheckout ? result.sessionId : result.paymentIntentId,
           provider: 'stripe',
           method: 'card',
           createdAt: paymentCreatedAt,
-          clientSecret: result.clientSecret,
+          clientSecret: usesHostedCheckout ? '' : result.clientSecret,
+          checkoutUrl: usesHostedCheckout ? result.checkoutUrl : '',
         },
-        clientSecret: result.clientSecret,
+        clientSecret: usesHostedCheckout ? '' : result.clientSecret,
+        checkoutUrl: usesHostedCheckout ? result.checkoutUrl : '',
       });
     }
 

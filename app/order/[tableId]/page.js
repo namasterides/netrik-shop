@@ -583,6 +583,7 @@ export default function CustomerOrder() {
           method: r.order.paymentMethod || prev?.method || 'card',
           amount: r.order.total?.toFixed?.(2) || prev?.amount || '',
           status: r.order.paymentStatus || prev?.status || 'unpaid',
+          clientSecret: prev?.clientSecret || '',
           checkoutUrl: prev?.checkoutUrl || '',
           createdAt: r.order.paymentCreatedAt || prev?.createdAt || null,
         }));
@@ -818,12 +819,26 @@ export default function CustomerOrder() {
       }
       if (data.order) setOrder(data.order);
       if (data.payment) setPayment(data.payment || null);
-      if (data.clientSecret) setCheckoutUrl(data.clientSecret);
-      setPaymentOpen(true);
-      if (!data.clientSecret) {
-        setStage(previousStage);
-        toast.error('Client secret not returned. Please try again.');
+
+      const returnedClientSecret = data.clientSecret || data.payment?.clientSecret || '';
+      const returnedCheckoutUrl = data.checkoutUrl || data.payment?.checkoutUrl || '';
+      setCheckoutUrl(returnedCheckoutUrl);
+
+      if (returnedClientSecret) {
+        setPaymentOpen(true);
+        return;
+      }
+
+      if (returnedCheckoutUrl) {
+        window.open(returnedCheckoutUrl, '_blank', 'noopener,noreferrer');
         setPaymentOpen(false);
+        return;
+      }
+
+      setPaymentOpen(false);
+      if (!returnedClientSecret && !returnedCheckoutUrl) {
+        setStage(previousStage);
+        toast.error('Payment details not returned. Please try again.');
       }
     } catch (e) {
       setStage(previousStage);
@@ -1990,9 +2005,9 @@ export default function CustomerOrder() {
                 <div className="text-xs text-neutral-500">
                   Reference: <span className="font-mono text-neutral-800">{payment?.reference || order?.paymentReference || 'Generating…'}</span>
                 </div>
-                {checkoutUrl ? (
+                {payment?.clientSecret ? (
                   <InlinePayment 
-                    clientSecret={checkoutUrl}
+                    clientSecret={payment.clientSecret}
                     amount={payTotal}
                     onSuccess={(pi) => {
                       toast.success('Payment successful!');
@@ -2004,7 +2019,18 @@ export default function CustomerOrder() {
                     onCancel={() => setPaymentOpen(false)}
                   />
                 ) : (
-                  <div className="text-center p-4">Loading secure payment...</div>
+                  <div className="text-center p-4">
+                    {checkoutUrl ? (
+                      <Button
+                        className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-6"
+                        onClick={openCheckout}
+                      >
+                        Open secure payment
+                      </Button>
+                    ) : (
+                      'Loading secure payment...'
+                    )}
+                  </div>
                 )}
                 <div className="text-center text-[11px] text-neutral-400">Keep this screen open to see payment confirmation.</div>
               </div>
