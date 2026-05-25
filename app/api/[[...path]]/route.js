@@ -583,6 +583,7 @@ async function handleDemoRequest(path, method, request) {
     if (!targetRestaurantId) return err('restaurantId is required');
     const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: targetRestaurantId });
     if (!guard.ok) return guard.response;
+    const promoted = body.promoted === true;
     const row = {
       id: makeId('menu'),
       restaurant_id: targetRestaurantId,
@@ -597,6 +598,9 @@ async function handleDemoRequest(path, method, request) {
       mood_tags: normalizeTagList(body.moodTags),
       taste_tags: normalizeTagList(body.tasteTags),
       dietary_tags: normalizeTagList(body.dietaryTags),
+      promoted,
+      promoted_at: promoted ? nowIso() : null,
+      promotion_label: clampStr(body.promotionLabel, 60),
       created_at: nowIso(),
     };
     db.menu.push(row);
@@ -626,6 +630,13 @@ async function handleDemoRequest(path, method, request) {
       if (body.moodTags !== undefined) row.mood_tags = normalizeTagList(body.moodTags);
       if (body.tasteTags !== undefined) row.taste_tags = normalizeTagList(body.tasteTags);
       if (body.dietaryTags !== undefined) row.dietary_tags = normalizeTagList(body.dietaryTags);
+      if (body.promoted !== undefined) {
+        const next = body.promoted === true;
+        if (next && !row.promoted) row.promoted_at = nowIso();
+        if (!next) row.promoted_at = null;
+        row.promoted = next;
+      }
+      if (body.promotionLabel !== undefined) row.promotion_label = clampStr(body.promotionLabel, 60);
       return json({ ok: true });
     }
 
@@ -1356,6 +1367,7 @@ async function handler(request, { params }) {
       if (!body.restaurantId) return err('restaurantId is required');
       const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId: body.restaurantId });
       if (!guard.ok) return guard.response;
+      const promoted = body.promoted === true;
       const row = {
         restaurant_id: body.restaurantId,
         name: clampStr(body.name, 120),
@@ -1369,6 +1381,9 @@ async function handler(request, { params }) {
         mood_tags: normalizeTagList(body.moodTags),
         taste_tags: normalizeTagList(body.tasteTags),
         dietary_tags: normalizeTagList(body.dietaryTags),
+        promoted,
+        promoted_at: promoted ? new Date().toISOString() : null,
+        promotion_label: clampStr(body.promotionLabel, 60),
       };
       const { data, error } = await sb.from('menu').insert(row).select('*').single();
       if (error) return safeErr('menu insert', error);
@@ -1396,6 +1411,11 @@ async function handler(request, { params }) {
         if (body.moodTags !== undefined) upd.mood_tags = normalizeTagList(body.moodTags);
         if (body.tasteTags !== undefined) upd.taste_tags = normalizeTagList(body.tasteTags);
         if (body.dietaryTags !== undefined) upd.dietary_tags = normalizeTagList(body.dietaryTags);
+        if (body.promoted !== undefined) {
+          upd.promoted = body.promoted === true;
+          upd.promoted_at = upd.promoted ? new Date().toISOString() : null;
+        }
+        if (body.promotionLabel !== undefined) upd.promotion_label = clampStr(body.promotionLabel, 60);
         const { error } = await sb.from('menu').update(upd).eq('id', id);
         if (error) return safeErr('menu update', error);
         return json({ ok: true });

@@ -137,6 +137,7 @@ const scoreMenuItem = ({ item, moodPick, tastePick, dietPick, cartTags, timeMood
     }
   }
   if (item.description && item.description.length > 20) score += 0.25;
+  if (item.promoted) score += 2.5;
   return score;
 };
 
@@ -263,7 +264,7 @@ export default function CustomerOrder() {
       const q = menuSearch.toLowerCase();
       list = list.filter((m) => (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q));
     }
-    return list;
+    return [...list].sort((a, b) => Number(!!b.promoted) - Number(!!a.promoted));
   }, [menu, menuCategory, menuSearch, dietaryFilter]);
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
@@ -1041,7 +1042,7 @@ export default function CustomerOrder() {
         body: JSON.stringify({
           sessionId, restaurantId: restaurant.id, tableId: table.id, language: resolvedLanguage,
           message: text,
-          menu: menu.map((m) => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [] })),
+          menu: menu.map((m) => ({ id: m.id, name: m.name, description: m.description, price: m.price, category: m.category, moodTags: m.moodTags || [], tasteTags: m.tasteTags || [], dietaryTags: m.dietaryTags || [], promoted: !!m.promoted, promotionLabel: m.promotionLabel || '' })),
           cart, allergy, preference, avoid, chefNotes, stage,
           clientActionId: actionId,
         }),
@@ -1251,10 +1252,20 @@ export default function CustomerOrder() {
                     return (
                       <div
                         key={item.id}
-                        className="rounded-2xl bg-white border border-neutral-200 overflow-hidden flex flex-col hover:border-emerald-300 hover:shadow-sm transition"
+                        className={`rounded-2xl bg-white border overflow-hidden flex flex-col transition hover:shadow-sm ${
+                          item.promoted
+                            ? 'border-amber-300 ring-1 ring-amber-200 hover:border-amber-400'
+                            : 'border-neutral-200 hover:border-emerald-300'
+                        }`}
                       >
                         <div className="relative h-20 overflow-hidden bg-neutral-100">
                           <img src={item.image || FALLBACK_MENU_IMAGE} alt={item.name} className="w-full h-full object-cover" />
+                          {item.promoted && (
+                            <div className="absolute top-1 left-1 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-1.5 py-0.5 text-[8px] uppercase tracking-widest font-bold shadow">
+                              <Sparkles className="h-2 w-2" />
+                              {item.promotionLabel?.trim() || 'Promoted'}
+                            </div>
+                          )}
                           {(item.tasteTags?.length || item.moodTags?.length) ? (
                             <div className="absolute bottom-1 left-1 right-1 flex flex-wrap gap-0.5 overflow-hidden">
                               {[...(item.tasteTags || []), ...(item.moodTags || [])].slice(0, 2).map((t) => (
@@ -1627,7 +1638,11 @@ export default function CustomerOrder() {
                   {filteredMenu.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded-2xl bg-white border border-neutral-200 overflow-hidden flex flex-col"
+                      className={`rounded-2xl bg-white border overflow-hidden flex flex-col transition ${
+                        item.promoted
+                          ? 'border-amber-300 ring-1 ring-amber-200 shadow-sm shadow-amber-100/60'
+                          : 'border-neutral-200'
+                      }`}
                       onMouseEnter={() => item.videoUrl && startVideoPreview(item.id)}
                       onMouseLeave={() => item.videoUrl && setActiveVideoId(null)}
                     >
@@ -1644,6 +1659,12 @@ export default function CustomerOrder() {
                           />
                         ) : (
                           <img src={item.image || FALLBACK_MENU_IMAGE} alt={item.name} className="w-full h-full object-cover" />
+                        )}
+                        {item.promoted && (
+                          <div className="absolute top-1 left-1 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-2 py-0.5 text-[9px] uppercase tracking-widest font-bold shadow">
+                            <Sparkles className="h-2.5 w-2.5" />
+                            {item.promotionLabel?.trim() || 'Promoted'}
+                          </div>
                         )}
                         {item.videoUrl && (
                           <button

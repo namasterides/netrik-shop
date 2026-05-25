@@ -37,6 +37,8 @@ import {
   Flame,
   FileText,
   Star,
+  Megaphone,
+  Sparkles,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { NetrikLogo } from '@/components/netrik-logo';
@@ -147,6 +149,10 @@ export default function ManagerDashboard() {
   const [supportMessages, setSupportMessages] = useState([]);
   const [supportText, setSupportText] = useState('');
 
+  const [promoteFilter, setPromoteFilter] = useState('all'); // all | promoted | unpromoted
+  const [promoteSearch, setPromoteSearch] = useState('');
+  const [promoteLabelDraft, setPromoteLabelDraft] = useState({});
+
   const getRandomImage = () => RANDOM_MENU_IMAGES[Math.floor(Math.random() * RANDOM_MENU_IMAGES.length)];
 
   const applyMenuImageFile = (file) => {
@@ -250,6 +256,41 @@ export default function ManagerDashboard() {
     if (!confirm(`Delete ${item.name}?`)) return;
     await fetch(`/api/menu/${item.id}`, { method: 'DELETE' });
     loadAll(me);
+  };
+
+  const togglePromoted = async (item, next) => {
+    const label = (promoteLabelDraft[item.id] ?? item.promotionLabel ?? '').slice(0, 60);
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promoted: next, promotionLabel: label } : m)));
+    try {
+      const res = await fetch(`/api/menu/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promoted: next, promotionLabel: label }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      toast.success(next ? `${item.name} is now promoted` : `${item.name} removed from promotions`);
+      loadAll(me, true);
+    } catch (e) {
+      setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promoted: !next } : m)));
+      toast.error('Could not update promotion');
+    }
+  };
+
+  const savePromotionLabel = async (item) => {
+    const label = (promoteLabelDraft[item.id] ?? '').slice(0, 60);
+    if (label === (item.promotionLabel || '')) return;
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promotionLabel: label } : m)));
+    try {
+      const res = await fetch(`/api/menu/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promotionLabel: label }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      toast.success('Promotion label saved');
+    } catch {
+      toast.error('Could not save label');
+    }
   };
 
   const addTable = async () => {
@@ -499,10 +540,13 @@ export default function ManagerDashboard() {
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'orders', label: 'Orders', icon: ClipboardList },
     { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
+    { id: 'promote', label: 'Promote', icon: Megaphone },
     { id: 'tables', label: 'Tables', icon: Table2 },
     { id: 'kitchen', label: 'Kitchen', icon: ChefHat },
     { id: 'feedback', label: 'Feedback', icon: Star },
   ];
+
+  const promotedCount = menu.filter((m) => m.promoted).length;
 
   return (
     <div className="min-h-screen bg-neutral-50/40 text-neutral-900">
@@ -584,7 +628,7 @@ export default function ManagerDashboard() {
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           {/* Custom mobile-friendly tab bar */}
           <div className="overflow-x-auto -mx-5 md:-mx-0 px-5 md:px-0 hide-scrollbar">
-            <TabsList className="bg-neutral-100/80 border border-neutral-200/80 rounded-full inline-flex h-11 p-1 w-auto md:w-full md:max-w-2xl md:mx-auto md:grid md:grid-cols-5">
+            <TabsList className="bg-neutral-100/80 border border-neutral-200/80 rounded-full inline-flex h-11 p-1 w-auto md:w-full md:max-w-3xl md:mx-auto md:grid md:grid-cols-7">
               {TABS.map((t) => (
                 <TabsTrigger
                   key={t.id}
@@ -957,6 +1001,169 @@ export default function ManagerDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          </TabsContent>
+
+          {/* Promote */}
+          <TabsContent value="promote" className="space-y-4">
+            <div className="rounded-2xl bg-gradient-to-br from-amber-50 via-white to-emerald-50 border border-amber-200/70 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-700 grid place-items-center shrink-0">
+                <Megaphone className="h-6 w-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-lg font-bold tracking-tight">Promote your best dishes</div>
+                <div className="text-sm text-neutral-600 mt-0.5">
+                  Toggle the spotlight on dishes you want to push. Promoted items are recommended more often by the AI waiter, surface first in chat suggestions, and get a glowing ribbon on the customer menu.
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-center">
+                  <div className="text-2xl font-extrabold text-amber-700 tabular-nums">{promotedCount}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold">Promoted</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-extrabold text-neutral-900 tabular-nums">{menu.length}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold">Total</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-full border border-neutral-200 bg-white p-1">
+                {[
+                  ['all', `All (${menu.length})`],
+                  ['promoted', `Promoted (${promotedCount})`],
+                  ['unpromoted', `Not promoted (${menu.length - promotedCount})`],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPromoteFilter(value)}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                      promoteFilter === value ? 'bg-amber-500 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <Input
+                value={promoteSearch}
+                onChange={(e) => setPromoteSearch(e.target.value)}
+                placeholder="Search dish or category…"
+                className="w-64 bg-white border-neutral-200"
+              />
+              <div className="text-xs text-neutral-500 ml-auto">
+                Tip: keep promotions focused — 3 to 5 dishes converts better than promoting everything.
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {menu.length === 0 && (
+                <div className="sm:col-span-2 lg:col-span-3 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-neutral-500">
+                  Add dishes in the Menu tab first, then come back here to promote them.
+                </div>
+              )}
+              {menu
+                .filter((item) => {
+                  if (promoteFilter === 'promoted' && !item.promoted) return false;
+                  if (promoteFilter === 'unpromoted' && item.promoted) return false;
+                  if (promoteSearch.trim()) {
+                    const q = promoteSearch.trim().toLowerCase();
+                    return (
+                      String(item.name || '').toLowerCase().includes(q) ||
+                      String(item.category || '').toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                })
+                .sort((a, b) => (Number(!!b.promoted) - Number(!!a.promoted)) || String(a.name).localeCompare(String(b.name)))
+                .map((item) => {
+                  const draftLabel = promoteLabelDraft[item.id] ?? item.promotionLabel ?? '';
+                  const labelDirty = draftLabel !== (item.promotionLabel || '');
+                  return (
+                    <div
+                      key={item.id}
+                      className={`relative rounded-2xl bg-white border overflow-hidden transition-shadow ${
+                        item.promoted
+                          ? 'border-amber-300 shadow-md shadow-amber-100/60 ring-1 ring-amber-200/60'
+                          : 'border-neutral-200/80'
+                      }`}
+                    >
+                      <div className="relative h-36 overflow-hidden bg-neutral-100">
+                        <img src={item.image || FOOD_IMG} alt={item.name} className="w-full h-full object-cover" />
+                        {item.promoted && (
+                          <div className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-[10px] uppercase tracking-widest font-bold shadow">
+                            <Sparkles className="h-3 w-3" />
+                            {item.promotionLabel?.trim() || 'Promoted'}
+                          </div>
+                        )}
+                        {!item.available && (
+                          <div className="absolute top-2 right-2 inline-flex items-center rounded-full bg-neutral-900/80 text-white px-2 py-0.5 text-[10px] uppercase tracking-widest font-bold">
+                            Hidden
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate">{item.name}</div>
+                            <div className="text-xs text-neutral-500">{item.category}</div>
+                          </div>
+                          <div className="font-bold text-emerald-800 tabular-nums">${Number(item.price || 0).toFixed(2)}</div>
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] uppercase tracking-widest font-bold text-neutral-500">
+                            Promotion label (optional)
+                          </Label>
+                          <div className="mt-1.5 flex gap-2">
+                            <Input
+                              value={draftLabel}
+                              maxLength={60}
+                              onChange={(e) =>
+                                setPromoteLabelDraft((prev) => ({ ...prev, [item.id]: e.target.value }))
+                              }
+                              placeholder="e.g. Chef's pick"
+                              className="bg-white border-neutral-200 h-9 text-sm"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!labelDirty}
+                              onClick={() => savePromotionLabel(item)}
+                              className="rounded-full border-neutral-200 hover:bg-neutral-50 h-9"
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className={`flex items-center justify-between rounded-xl border p-3 ${
+                          item.promoted ? 'border-amber-200 bg-amber-50/60' : 'border-neutral-200 bg-neutral-50/40'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            <Megaphone className={`h-4 w-4 ${item.promoted ? 'text-amber-600' : 'text-neutral-400'}`} />
+                            <div>
+                              <div className="text-sm font-semibold">
+                                {item.promoted ? 'Promoted to guests' : 'Not promoted'}
+                              </div>
+                              <div className="text-[11px] text-neutral-500">
+                                {item.promoted
+                                  ? 'AI waiter pushes this dish in chat'
+                                  : 'Flip on to boost in chat & menu'}
+                              </div>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={!!item.promoted}
+                            onCheckedChange={(v) => togglePromoted(item, v)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </TabsContent>
 

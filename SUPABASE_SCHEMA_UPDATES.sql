@@ -163,6 +163,16 @@ CREATE INDEX IF NOT EXISTS idx_menu_mood_tags    ON public.menu USING GIN (mood_
 CREATE INDEX IF NOT EXISTS idx_menu_taste_tags   ON public.menu USING GIN (taste_tags);
 CREATE INDEX IF NOT EXISTS idx_menu_dietary_tags ON public.menu USING GIN (dietary_tags);
 
+-- ============================================
+-- MENU PROMOTION
+-- Managers can flag a dish as promoted. The AI Waiter recommends promoted dishes
+-- more aggressively, and the customer menu UI highlights them with a "Promoted" ribbon.
+-- ============================================
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS promoted        BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS promoted_at     TIMESTAMPTZ;
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS promotion_label TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_menu_promoted ON public.menu (restaurant_id, promoted) WHERE promoted = TRUE;
+
 -- Verify servers table structure
 SELECT column_name, data_type, is_nullable
 FROM information_schema.columns
