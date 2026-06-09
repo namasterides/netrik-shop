@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, UserCheck, Clock, DollarSign, UtensilsCrossed, Users, AlertTriangle, Flame, Pencil } from 'lucide-react';
+import { LogOut, UserCheck, Clock, DollarSign, UtensilsCrossed, Users, AlertTriangle, Flame, Pencil, Plus } from 'lucide-react';
 import { NetrikLogo } from '@/components/netrik-logo';
 import LoadingLogo from '@/components/loading-logo';
 
@@ -101,9 +101,15 @@ export default function ServerDashboard() {
           <StatCard icon={DollarSign} label="Total revenue" value={`$${totalRevenue.toFixed(2)}`} tone="dark" />
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-neutral-500 mb-4">
-          <Users className="h-4 w-4" />
-          <span className="font-medium">Your tables</span>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-sm text-neutral-500">
+            <Users className="h-4 w-4" />
+            <span className="font-medium">Your tables</span>
+          </div>
+          <Button size="sm" className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20" onClick={() => router.push('/server/place-order')}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Order
+          </Button>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
