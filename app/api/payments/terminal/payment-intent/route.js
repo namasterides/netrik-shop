@@ -1,5 +1,7 @@
 import Stripe from 'stripe';
 
+export const dynamic = 'force-dynamic';
+
 // Use environment variable for the secret key
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 
