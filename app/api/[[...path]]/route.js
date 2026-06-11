@@ -178,13 +178,13 @@ const buildUpiUri = ({ vpa, name, amount, reference }) => {
   return `upi://pay?${params.toString()}`;
 };
 
-const buildUpiPayment = (row) => ({
+const buildUpiPayment = (row, restaurant = null) => ({
   reference: row.payment_reference || '',
-  vpa: row.payment_vpa || DEMO_UPI_VPA,
-  payee: DEMO_UPI_PAYEE,
+  vpa: row.payment_vpa || restaurant?.upi_id || '',
+  payee: restaurant?.name || '',
   amount: toAmount(row.total_with_tip ?? row.total),
   status: row.payment_status || (row.status === 'paid' ? 'paid' : 'unpaid'),
-  upiUri: row.payment_qr || '',
+  upiUri: row.payment_qr || restaurant?.upi_qr_code || '',
   createdAt: row.payment_created_at || null,
 });
 
@@ -844,8 +844,24 @@ async function handleDemoRequest(path, method, request) {
     const { orderId } = await request.json();
     const row = db.orders.find((o) => o.id === orderId);
     if (!row) return err('Order not found', 404);
-    ensureDemoUpiPayment(row);
-    return json({ order: orderToApi(row), payment: buildUpiPayment(row) });
+    const restaurant = db.restaurants.find((r) => r.id === row.restaurant_id);
+    if (!restaurant || !restaurant.upi_id) {
+      return err('Restaurant UPI details are missing. Please complete onboarding first.', 400);
+    }
+
+    if (!row.payment_reference) row.payment_reference = makeUpiReference();
+    row.payment_provider = row.payment_provider || 'restaurant-upi';
+    row.payment_method = row.payment_method || 'upi';
+    row.payment_vpa = row.payment_vpa || restaurant.upi_id;
+    row.payment_qr = row.payment_qr || restaurant.upi_qr_code || buildUpiUri({
+      vpa: row.payment_vpa,
+      name: restaurant.name || 'Restaurant',
+      amount: toAmount(row.total_with_tip ?? row.total),
+      reference: row.payment_reference,
+    });
+    row.payment_status = row.payment_status && row.payment_status !== 'unpaid' ? row.payment_status : 'pending';
+    row.payment_created_at = row.payment_created_at || nowIso();
+    return json({ order: orderToApi(row), payment: buildUpiPayment(row, restaurant) });
   }
 
   if (path === 'payment/upi/status' && method === 'GET') {
@@ -853,13 +869,24 @@ async function handleDemoRequest(path, method, request) {
     const orderId = url.searchParams.get('orderId');
     const row = db.orders.find((o) => o.id === orderId);
     if (!row) return err('Order not found', 404);
-    ensureDemoUpiPayment(row);
-    const settled = maybeAutoSettleDemoUpi(row);
-    if (settled) {
-      const table = db.rest_tables.find((t) => t.id === row.table_id);
-      if (table) table.status = 'available';
+    const restaurant = db.restaurants.find((r) => r.id === row.restaurant_id);
+    if (!restaurant || !restaurant.upi_id) {
+      return err('Restaurant UPI details are missing. Please complete onboarding first.', 400);
     }
-    return json({ order: orderToApi(row), payment: buildUpiPayment(row) });
+
+    if (!row.payment_reference) row.payment_reference = makeUpiReference();
+    row.payment_provider = row.payment_provider || 'restaurant-upi';
+    row.payment_method = row.payment_method || 'upi';
+    row.payment_vpa = row.payment_vpa || restaurant.upi_id;
+    row.payment_qr = row.payment_qr || restaurant.upi_qr_code || buildUpiUri({
+      vpa: row.payment_vpa,
+      name: restaurant.name || 'Restaurant',
+      amount: toAmount(row.total_with_tip ?? row.total),
+      reference: row.payment_reference,
+    });
+    row.payment_status = row.payment_status && row.payment_status !== 'unpaid' ? row.payment_status : 'pending';
+    row.payment_created_at = row.payment_created_at || nowIso();
+    return json({ order: orderToApi(row), payment: buildUpiPayment(row, restaurant) });
   }
 
   // ============ FEEDBACK ============
@@ -1632,28 +1659,38 @@ async function handler(request, { params }) {
       if (ge) return safeErr('upi/init get', ge);
       if (!o) return err('Order not found', 404);
 
+      const { data: restaurant, error: restaurantError } = await sb
+        .from('restaurants')
+        .select('id, name, upi_id, upi_qr_code')
+        .eq('id', o.restaurant_id)
+        .maybeSingle();
+      if (restaurantError) return safeErr('upi/init restaurant get', restaurantError);
+      if (!restaurant || !restaurant.upi_id) {
+        return err('Restaurant UPI details are missing. Please complete onboarding first.', 400);
+      }
+
       const payableTotal = o.total_with_tip ?? o.total;
 
       const paymentReference = o.payment_reference || makeUpiReference();
-      const vpa = o.payment_vpa || DEMO_UPI_VPA;
+      const vpa = o.payment_vpa || restaurant.upi_id;
       const paymentCreatedAt = o.payment_created_at || new Date().toISOString();
-      const paymentQr = o.payment_qr || buildUpiUri({
+      const paymentQr = o.payment_qr || restaurant.upi_qr_code || buildUpiUri({
         vpa,
-        name: DEMO_UPI_PAYEE,
+        name: restaurant.name || 'Restaurant',
         amount: toAmount(payableTotal),
         reference: paymentReference,
       });
       const { data, error } = await sb.from('orders').update({
         payment_status: o.payment_status && o.payment_status !== 'unpaid' ? o.payment_status : 'pending',
         payment_reference: paymentReference,
-        payment_provider: o.payment_provider || 'demo-upi',
+        payment_provider: o.payment_provider || 'restaurant-upi',
         payment_method: o.payment_method || 'upi',
         payment_vpa: vpa,
         payment_qr: paymentQr,
         payment_created_at: paymentCreatedAt,
       }).eq('id', orderId).select('*').single();
       if (error) return safeErr('upi/init update', error);
-      return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
+      return json({ order: orderToApi(data), payment: buildUpiPayment(data, restaurant) });
     }
 
     if (path === 'payment/upi/status' && method === 'GET') {
@@ -1663,23 +1700,31 @@ async function handler(request, { params }) {
       if (ge) return safeErr('upi/status get', ge);
       if (!o) return err('Order not found', 404);
 
+      const { data: restaurant, error: restaurantError } = await sb
+        .from('restaurants')
+        .select('id, name, upi_id, upi_qr_code')
+        .eq('id', o.restaurant_id)
+        .maybeSingle();
+      if (restaurantError) return safeErr('upi/status restaurant get', restaurantError);
+      if (!restaurant || !restaurant.upi_id) {
+        return err('Restaurant UPI details are missing. Please complete onboarding first.', 400);
+      }
+
       const row = { ...o };
       if (!row.payment_reference) row.payment_reference = makeUpiReference();
-      if (!row.payment_vpa) row.payment_vpa = DEMO_UPI_VPA;
-      if (!row.payment_provider) row.payment_provider = 'demo-upi';
+      if (!row.payment_vpa) row.payment_vpa = restaurant.upi_id;
+      if (!row.payment_provider) row.payment_provider = 'restaurant-upi';
       if (!row.payment_method) row.payment_method = 'upi';
       if (!row.payment_created_at) row.payment_created_at = new Date().toISOString();
       if (!row.payment_qr) {
-        row.payment_qr = buildUpiUri({
+        row.payment_qr = restaurant.upi_qr_code || buildUpiUri({
           vpa: row.payment_vpa,
-          name: DEMO_UPI_PAYEE,
+          name: restaurant.name || 'Restaurant',
           amount: toAmount(row.total_with_tip ?? row.total),
           reference: row.payment_reference,
         });
       }
       if (!row.payment_status || row.payment_status === 'unpaid') row.payment_status = 'pending';
-
-      const settled = maybeAutoSettleDemoUpi(row);
       const { data, error } = await sb.from('orders').update({
         payment_status: row.payment_status,
         payment_reference: row.payment_reference,
@@ -1693,10 +1738,7 @@ async function handler(request, { params }) {
         updated_at: row.updated_at || new Date().toISOString(),
       }).eq('id', orderId).select('*').single();
       if (error) return safeErr('upi/status update', error);
-      if (settled) {
-        await sb.from('rest_tables').update({ status: 'available' }).eq('id', o.table_id);
-      }
-      return json({ order: orderToApi(data), payment: buildUpiPayment(data) });
+      return json({ order: orderToApi(data), payment: buildUpiPayment(data, restaurant) });
     }
 
     // ============ PAYMENT (STRIPE) ============

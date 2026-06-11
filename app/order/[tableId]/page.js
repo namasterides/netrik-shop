@@ -437,7 +437,7 @@ export default function CustomerOrder() {
           setMessages([
             {
               role: 'assistant',
-              text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, place your order and pay — all right here in this chat. You can also tap the emoji button to add reactions.`,
+              text: `Hi there 👋 Welcome to ${rest.restaurant?.name || 'our restaurant'}. I'm your digital waiter. What are you craving today? You can ask for recommendations, browse the menu, and place your order here, then finish payment in the checkout flow. You can also tap the emoji button to add reactions.`,
             },
           ]);
         }
