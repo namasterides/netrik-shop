@@ -34,11 +34,15 @@ CREATE TABLE IF NOT EXISTS public.restaurants (
   manager_password TEXT NOT NULL,
   chef_user_id    TEXT UNIQUE NOT NULL,
   chef_password   TEXT NOT NULL,
+  upi_id          TEXT DEFAULT '',
+  upi_qr_code     TEXT DEFAULT '',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ
 );
 ALTER TABLE public.restaurants ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
 ALTER TABLE public.restaurants ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT '';
+ALTER TABLE public.restaurants ADD COLUMN IF NOT EXISTS upi_id TEXT DEFAULT '';
+ALTER TABLE public.restaurants ADD COLUMN IF NOT EXISTS upi_qr_code TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_restaurants_manager ON public.restaurants(manager_user_id);
 CREATE INDEX IF NOT EXISTS idx_restaurants_chef    ON public.restaurants(chef_user_id);
 

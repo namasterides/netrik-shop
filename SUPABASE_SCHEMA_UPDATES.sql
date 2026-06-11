@@ -72,6 +72,26 @@ END $$;
 
 -- ============================================
 
+-- 3.5. ADD UPI FIELDS TO RESTAURANTS TABLE
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'restaurants' AND column_name = 'upi_id'
+  ) THEN
+    ALTER TABLE restaurants ADD COLUMN upi_id TEXT DEFAULT '';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'restaurants' AND column_name = 'upi_qr_code'
+  ) THEN
+    ALTER TABLE restaurants ADD COLUMN upi_qr_code TEXT DEFAULT '';
+  END IF;
+END $$;
+
+-- ============================================
+
 -- 4. VERIFY EXISTING TABLES HAVE REQUIRED COLUMNS
 
 -- Check orders table has all required fields

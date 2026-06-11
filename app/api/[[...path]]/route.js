@@ -1172,6 +1172,8 @@ async function handler(request, { params }) {
         manager_password: randPwd(),
         chef_user_id: 'chef_' + s,
         chef_password: randPwd(),
+        upi_id: clampStr(body.upiId, 120),
+        upi_qr_code: clampStr(body.upiQrCode, 500),
       };
       const { data, error } = await sb.from('restaurants').insert(row).select('*').single();
       if (error) return safeErr('restaurants insert', error);
@@ -1220,6 +1222,8 @@ async function handler(request, { params }) {
         if (body.address !== undefined) upd.address = clampStr(body.address, 240);
         if (body.domain !== undefined) upd.domain = clampStr(body.domain, 120);
         if (body.logoUrl !== undefined) upd.logo_url = clampStr(body.logoUrl, 500);
+        if (body.upiId !== undefined) upd.upi_id = clampStr(body.upiId, 120);
+        if (body.upiQrCode !== undefined) upd.upi_qr_code = clampStr(body.upiQrCode, 500);
         if (body.subscription !== undefined && guard.session.type === 'central') {
           upd.subscription = clampStr(body.subscription, 40);
         }

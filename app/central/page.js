@@ -105,6 +105,8 @@ export default function CentralAdmin() {
     address: '',
     domain: '',
     logoUrl: '',
+    upiId: '',
+    upiQrCode: '',
     subscription: 'Pro',
   });
 
@@ -168,7 +170,7 @@ export default function CentralAdmin() {
     if (!editing && data.restaurant) setShowCredsFor(data.restaurant);
     setOpen(false);
     setEditing(null);
-    setForm({ name: '', ownerName: '', email: '', contact: '', address: '', domain: '', logoUrl: '', subscription: 'Pro' });
+    setForm({ name: '', ownerName: '', email: '', contact: '', address: '', domain: '', logoUrl: '', upiId: '', upiQrCode: '', subscription: 'Pro' });
     refresh();
   };
 
@@ -182,6 +184,8 @@ export default function CentralAdmin() {
       address: r.address || '',
       domain: r.domain || '',
       logoUrl: r.logoUrl || '',
+      upiId: r.upiId || '',
+      upiQrCode: r.upiQrCode || '',
       subscription: r.subscription,
     });
     setOpen(true);
@@ -561,7 +565,7 @@ export default function CentralAdmin() {
                     size="sm"
                     onClick={() => {
                       setEditing(null);
-                      setForm({ name: '', ownerName: '', email: '', contact: '', address: '', domain: '', logoUrl: '', subscription: 'Pro' });
+                      setForm({ name: '', ownerName: '', email: '', contact: '', address: '', domain: '', logoUrl: '', upiId: '', upiQrCode: '', subscription: 'Pro' });
                     }}
                     className="rounded-full h-9 bg-emerald-700 hover:bg-emerald-800 text-white px-4"
                   >
@@ -602,6 +606,16 @@ export default function CentralAdmin() {
                     <div>
                       <Label className="text-xs font-semibold">Address</Label>
                       <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="mt-1.5 bg-white border-neutral-200" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs font-semibold">UPI ID</Label>
+                        <Input value={form.upiId} onChange={(e) => setForm({ ...form, upiId: e.target.value })} placeholder="restaurant@upi" className="mt-1.5 bg-white border-neutral-200" />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold">UPI QR Code URL</Label>
+                        <Input value={form.upiQrCode} onChange={(e) => setForm({ ...form, upiQrCode: e.target.value })} placeholder="https://..." className="mt-1.5 bg-white border-neutral-200" />
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="col-span-2">
