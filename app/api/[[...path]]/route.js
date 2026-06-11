@@ -72,12 +72,22 @@ async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, 
   return ai;
 }
 
-const json = (data, status = 200) => NextResponse.json(data, { status });
-const err = (message, status = 400) => NextResponse.json({ error: message }, { status });
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, stripe-signature',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+const json = (data, status = 200) => NextResponse.json(data, { status, headers: corsHeaders });
+const err = (message, status = 400) => NextResponse.json({ error: message }, { status, headers: corsHeaders });
 // Generic safe error: log details server-side, return opaque message to client.
 function safeErr(label, e, status = 500, msg = 'Server error') {
   console.error('[api]', label, e?.message || e);
-  return NextResponse.json({ error: msg }, { status });
+  return NextResponse.json({ error: msg }, { status, headers: corsHeaders });
 }
 
 const slug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 18) || 'rest';
