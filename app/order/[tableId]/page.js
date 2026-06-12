@@ -1077,8 +1077,6 @@ export default function CustomerOrder() {
         else if (stage === 'ordered' || stage === 'served') await addOnsAfterOrder(nextCart);
       }
 
-      if (data.actions?.pay_now && order && order.status !== 'paid') setShowBill(true);
-
       if (order && order.status !== 'paid' && (stage === 'served' || stage === 'paying')) {
         reminderRef.current += 1;
         if (reminderRef.current % 5 === 0) {

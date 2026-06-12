@@ -24,7 +24,7 @@ async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, 
   const lowerMsg = String(message || '').toLowerCase().trim();
   
   // Adaptive Model Usage: Route simple intents directly to fast local NLU
-  if (/^(menu|show me the menu|what do you have|bill|check|checkout|pay)$/i.test(lowerMsg)) {
+  if (/^(menu|show me the menu|what do you have|bill|check)$/i.test(lowerMsg)) {
     return nluRespond({ message, menu, cart, allergy, preference, avoid, notes, stage, restaurantName, history, language });
   }
 
@@ -44,12 +44,6 @@ async function aiWaiterReply({ message, menu, cart, allergy, preference, avoid, 
   }
 
   const actions = ai.actions || {};
-
-  // Guardrail: Payment only allowed if order is placed
-  if (actions.pay_now && stage === 'browsing') {
-    delete actions.pay_now;
-    ai.reply = "Please place your order first before paying.";
-  }
 
   // Guardrail: State Machine Hardening
   // Server is the source of truth for required questions before order placement
@@ -2124,4 +2118,3 @@ export const POST = handler;
 export const PUT = handler;
 export const DELETE = handler;
 export const PATCH = handler;
-export const OPTIONS = () => new NextResponse(null, { status: 204 });
