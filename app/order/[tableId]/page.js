@@ -1077,12 +1077,6 @@ export default function CustomerOrder() {
         else if (stage === 'ordered' || stage === 'served') await addOnsAfterOrder(nextCart);
       }
 
-      if (order && order.status !== 'paid' && (stage === 'served' || stage === 'paying')) {
-        reminderRef.current += 1;
-        if (reminderRef.current % 5 === 0) {
-          setMessages((m) => [...m, { role: 'assistant', text: '⏳ Payment is still pending. You can pay anytime here.' }]);
-        }
-      }
     } catch (e) {
       if (textOverride) setInput(textOverride); // Restore input if it was an explicit button click
       else if (text) setInput(text); // Keep input for manual typing
@@ -1136,40 +1130,16 @@ export default function CustomerOrder() {
                 </div>
               </div>
             </div>
-            {order && (
-              <div className="text-right flex flex-col items-end gap-1 shrink-0">
+            <div className="text-right flex flex-col items-end gap-1 shrink-0">
                 <div className="text-lg font-extrabold text-emerald-800 tabular-nums leading-none">
-                    ${(Number(order.totalWithTip ?? order.total) || 0).toFixed(2)}
+                  ${(order ? Number(order.total) || 0 : cartTotal).toFixed(2)}
                 </div>
-                <div className="text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-medium">
-                  {order.status} · pay {order.paymentStatus || payment?.status || 'pending'}
-                </div>
-                {order.status !== 'paid' && stage !== 'paying' && stage !== 'feedback' && stage !== 'done' && (
-                  <button
-                    onClick={() => setShowBill(true)}
-                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-700 text-white px-2.5 py-1 text-[10px] font-semibold hover:bg-emerald-800 transition"
-                  >
-                    <FileText className="h-3 w-3" />Bill & pay
-                  </button>
-                )}
-                {order.status !== 'paid' && stage === 'paying' && (
-                  <button
-                    onClick={() => setPaymentOpen(true)}
-                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-neutral-900 text-white px-2.5 py-1 text-[10px] font-semibold"
-                  >
-                    <Receipt className="h-3 w-3" />Payment
-                  </button>
-                )}
-                {order.status === 'paid' && (
-                  <button
-                    onClick={() => downloadReceipt(order, payment)}
-                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-700 px-2.5 py-1 text-[10px] font-semibold"
-                  >
-                    <Download className="h-3 w-3" />Bill
-                  </button>
+                {order && (
+                  <div className="text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-medium">
+                    {order.status}
+                  </div>
                 )}
               </div>
-            )}
           </div>
         </div>
 
@@ -1854,68 +1824,7 @@ export default function CustomerOrder() {
                     {chefNotes && <div>✍ <span className="font-semibold">Chef notes:</span> {chefNotes}</div>}
                   </div>
                 )}
-                <div className="px-6 pb-4 space-y-4 text-sm">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-2">Add tip</div>
-                    <div className="flex flex-wrap gap-2">
-                      {TIP_PRESETS.map((preset) => (
-                        <button
-                          key={preset}
-                          onClick={() => { setTipMode('percent'); setTipPercent(preset); setTipCustom(''); }}
-                          className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
-                            tipMode === 'percent' && tipPercent === preset
-                              ? 'bg-emerald-700 text-white border-emerald-700'
-                              : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                          }`}
-                        >
-                          {preset}%
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => setTipMode('custom')}
-                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
-                          tipMode === 'custom'
-                            ? 'bg-neutral-900 text-white border-neutral-900'
-                            : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                        }`}
-                      >
-                        Custom
-                      </button>
-                    </div>
-                    {tipMode === 'custom' && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={tipCustom}
-                          onChange={(e) => setTipCustom(e.target.value)}
-                          placeholder="Tip amount"
-                          className="h-9 bg-white border-neutral-200 rounded-full text-xs"
-                        />
-                        <span className="text-xs text-neutral-500">USD</span>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-2">Split bill</div>
-                    <div className="flex flex-wrap gap-2">
-                      {[1, 2, 3, 4, 5, 6].map((n) => (
-                        <button
-                          key={n}
-                          onClick={() => setSplitCount(n)}
-                          className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition ${
-                            splitCount === n
-                              ? 'bg-emerald-700 text-white border-emerald-700'
-                              : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                          }`}
-                        >
-                          {n}x
-                        </button>
-                      ))}
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-2">Per person: ${perPersonTotal.toFixed(2)}</div>
-                  </div>
+                <div className="px-6 pb-4 space-y-2 text-sm">
                   {(() => {
                     const subtotal = (order.items || []).reduce((s, i) => s + Number(i.price || 0) * (i.qty || 1), 0);
                     const total = Number(order.total || subtotal);
@@ -1930,13 +1839,8 @@ export default function CustomerOrder() {
                             <span>Taxes & service</span><span className="tabular-nums">${tax.toFixed(2)}</span>
                           </div>
                         )}
-                        {tipAmount > 0 && (
-                          <div className="flex justify-between text-neutral-600">
-                            <span>Tip</span><span className="tabular-nums">${tipAmount.toFixed(2)}</span>
-                          </div>
-                        )}
                         <div className="flex justify-between text-lg font-extrabold pt-2 border-t border-neutral-100 mt-2">
-                          <span>Total</span><span className="tabular-nums">${payTotal.toFixed(2)}</span>
+                          <span>Total</span><span className="tabular-nums">${total.toFixed(2)}</span>
                         </div>
                       </>
                     );
@@ -1944,16 +1848,8 @@ export default function CustomerOrder() {
                 </div>
               </div>
               <div className="shrink-0 border-t border-neutral-100 px-6 py-4 bg-white flex gap-2">
-                <Button variant="outline" className="rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadReceipt(order, payment)}>
-                  <Download className="h-4 w-4 mr-1.5" />Download
-                </Button>
-                <Button
-                  className="flex-1 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold h-11 shadow-md shadow-emerald-700/20"
-                  disabled={order.status === 'paid'}
-                  onClick={async () => { setShowBill(false); await startStripePayment(); }}
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  {order.status === 'paid' ? 'Already paid' : `Pay $${payTotal.toFixed(2)}`}
+                <Button variant="outline" className="flex-1 rounded-full border-neutral-200 hover:bg-neutral-50" onClick={() => downloadReceipt(order, payment)}>
+                  <Download className="h-4 w-4 mr-1.5" />Download bill
                 </Button>
               </div>
             </div>
