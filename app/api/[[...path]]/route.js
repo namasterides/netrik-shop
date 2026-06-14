@@ -1315,6 +1315,18 @@ async function handler(request, { params }) {
       }));
       return json({ servers });
     }
+
+    const restServerUpdateMatch = path.match(/^restaurants\/([^\/]+)\/servers\/([^\/]+)$/);
+    if (restServerUpdateMatch && method === 'PUT') {
+      const [_, restaurantId, serverId] = restServerUpdateMatch;
+      const guard = requireSession(request, { roles: ['central', 'manager'], restaurantId });
+      if (!guard.ok) return guard.response;
+      const body = await request.json();
+      const { error } = await sb.from('servers').update({ assigned_table_ids: body.assignedTableIds || [] }).eq('id', serverId).eq('restaurant_id', restaurantId);
+      if (error) return safeErr('server update', error);
+      return json({ ok: true });
+    }
+
     const restFeedbackMatch = path.match(/^restaurants\/([^\/]+)\/feedback$/);
     if (restFeedbackMatch && method === 'GET') {
       const id = restFeedbackMatch[1];

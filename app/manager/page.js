@@ -134,6 +134,7 @@ export default function ManagerDashboard() {
 
   const [menu, setMenu] = useState([]);
   const [tables, setTables] = useState([]);
+  const [servers, setServers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [feedbacks, setFeedbacks] = useState([]);
   const [analytics, setAnalytics] = useState({ todayRevenue: 0, todayOrders: 0, avgTicket: 0, topItems: [], byHour: [], last7: [] });
@@ -215,7 +216,7 @@ export default function ManagerDashboard() {
 
   const loadAll = async (u, silent = false) => {
     if (!u) return;
-    const [r, m, t, o, a, sm, fb] = await Promise.all([
+    const [r, m, t, o, a, sm, fb, srvs] = await Promise.all([
       fetch(`/api/restaurants/${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/menu?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/tables?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
@@ -223,10 +224,12 @@ export default function ManagerDashboard() {
       fetch(`/api/analytics?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/support?restaurantId=${u.restaurantId}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch(`/api/restaurants/${u.restaurantId}/feedback`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/restaurants/${u.restaurantId}/servers`, { cache: 'no-store' }).then((r) => r.json()),
     ]);
     setRestaurant(r.restaurant);
     setMenu(m.menu || []);
     setTables(t.tables || []);
+    setServers(srvs?.servers || []);
     setOrders(o.orders || []);
     setAnalytics(a || {});
     setSupportMessages(sm.messages || []);
@@ -312,6 +315,17 @@ export default function ManagerDashboard() {
 
   const setTableStatus = async (t, status) => {
     await fetch(`/api/tables/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    loadAll(me);
+  };
+
+  const updateServerTables = async (serverId, assignedTableIds) => {
+    const res = await fetch(`/api/restaurants/${me.restaurantId}/servers/${serverId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTableIds }),
+    });
+    if (!res.ok) return toast.error('Failed to update server tables');
+    toast.success('Server tables updated');
     loadAll(me);
   };
 
@@ -1169,6 +1183,47 @@ export default function ManagerDashboard() {
 
           {/* Tables */}
           <TabsContent value="tables" className="space-y-4">
+            {servers.length > 0 && (
+              <div className="mb-8 border border-neutral-200 rounded-xl overflow-hidden bg-white">
+                <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
+                  <h3 className="font-semibold text-neutral-900">Servers</h3>
+                  <p className="text-xs text-neutral-500 mt-1">Assign tables to servers for routing.</p>
+                </div>
+                <div className="divide-y divide-neutral-100">
+                  {servers.map(s => (
+                    <div key={s.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-sm text-neutral-900">{s.name}</div>
+                        <div className="text-xs text-neutral-500 mt-0.5">ID: {s.userId}</div>
+                      </div>
+                      <div className="flex-1 max-w-sm">
+                        <Label className="text-xs mb-1.5 block">Assigned Tables</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {tables.map(t => {
+                            const isAssigned = (s.assignedTableIds || []).includes(t.id);
+                            return (
+                              <button
+                                key={t.id}
+                                onClick={() => {
+                                  const next = isAssigned 
+                                    ? s.assignedTableIds.filter(id => id !== t.id)
+                                    : [...(s.assignedTableIds || []), t.id];
+                                  updateServerTables(s.id, next);
+                                }}
+                                className={`px-2 py-1 text-xs rounded-md border transition ${isAssigned ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-medium' : 'bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300'}`}
+                              >
+                                {t.number}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <div className="text-sm text-neutral-600">
                 <span className="font-semibold text-neutral-900">{tables.length}</span> tables
